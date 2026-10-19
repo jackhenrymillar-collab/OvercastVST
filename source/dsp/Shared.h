@@ -322,6 +322,9 @@ public:
 
     void setNumTaps (std::size_t n) { numTaps = std::min (n, MaxTaps); }
 
+    // Write the input without reading any taps (keeps an idle bank ready to use).
+    void push (float x) noexcept { line.push (x); }
+
     float process (float x) noexcept
     {
         line.push (x);
