@@ -1,5 +1,5 @@
 #include "TestHelpers.h"
-#include "dsp/PlateReverb.h"
+#include "dsp/machines/PlateReverb.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

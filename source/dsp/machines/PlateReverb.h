@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Blocks.h"
-#include "ReverbMachine.h"
+#include "../Blocks.h"
+#include "../ReverbMachine.h"
 
 #include <array>
 

@@ -137,6 +137,7 @@ public:
     void snapTo (float t) noexcept { target = t; current = t; }
     float getTarget() const noexcept { return static_cast<float> (target); }
     float getCurrent() const noexcept { return static_cast<float> (current); }
+    bool isSettled() const noexcept { return ! (current < target) && ! (current > target); }
 
     float next() noexcept
     {
@@ -192,6 +193,34 @@ public:
 
     void setHighpass (float hz, double sampleRate) { design (hz, sampleRate, true); }
     void setLowpass (float hz, double sampleRate) { design (hz, sampleRate, false); }
+
+    // Constant 0 dB peak-gain bandpass (RBJ), used for formants.
+    void setBandpass (float hz, float q, double sampleRate)
+    {
+        const double w0 = 2.0 * std::numbers::pi * std::min<double> (hz, 0.45 * sampleRate) / sampleRate;
+        const double alpha = std::sin (w0) / (2.0 * q);
+        const double a0 = 1.0 + alpha;
+        b0 = static_cast<float> (alpha / a0);
+        b1 = 0.0f;
+        b2 = static_cast<float> (-alpha / a0);
+        a1 = static_cast<float> (-2.0 * std::cos (w0) / a0);
+        a2 = static_cast<float> ((1.0 - alpha) / a0);
+    }
+
+    // Peaking EQ (RBJ), used for tape head bump.
+    void setPeak (float hz, float q, float gainDb, double sampleRate)
+    {
+        const double A = std::pow (10.0, gainDb / 40.0);
+        const double w0 = 2.0 * std::numbers::pi * std::min<double> (hz, 0.45 * sampleRate) / sampleRate;
+        const double alpha = std::sin (w0) / (2.0 * q);
+        const double cosw = std::cos (w0);
+        const double a0 = 1.0 + alpha / A;
+        b0 = static_cast<float> ((1.0 + alpha * A) / a0);
+        b1 = static_cast<float> (-2.0 * cosw / a0);
+        b2 = static_cast<float> ((1.0 - alpha * A) / a0);
+        a1 = static_cast<float> (-2.0 * cosw / a0);
+        a2 = static_cast<float> ((1.0 - alpha / A) / a0);
+    }
 
     float process (float x) noexcept
     {
