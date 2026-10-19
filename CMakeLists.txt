@@ -16,6 +16,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(OVERCAST_BUILD_PLUGIN "Build the JUCE plugin (VST3, AU, Standalone)" ON)
 option(OVERCAST_BUILD_TESTS "Build the DSP unit tests" ON)
+option(OVERCAST_BUILD_SNAPSHOT "Build a tool that renders the panel to PNG (development only)" OFF)
 
 include(FetchContent)
 
@@ -66,9 +67,35 @@ if(OVERCAST_BUILD_PLUGIN)
         VST3_CATEGORIES Fx Reverb
         COPY_PLUGIN_AFTER_BUILD ${APPLE})
 
+    # Fonts for the panel (SIL Open Font License, see resources/fonts).
+    juce_add_binary_data(OvercastAssets
+        HEADER_NAME OvercastAssets.h
+        NAMESPACE OvercastAssets
+        SOURCES
+            resources/fonts/CormorantGaramond-Medium.ttf
+            resources/fonts/CormorantGaramond-SemiBold.ttf
+            resources/fonts/Jost-Regular.ttf
+            resources/fonts/Jost-Medium.ttf)
+    set_target_properties(OvercastAssets PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+    set(OVERCAST_UI_SOURCES
+        source/PluginEditor.cpp
+        source/PresetManager.cpp
+        source/ui/Controls.cpp
+        source/ui/MachineInfo.cpp
+        source/ui/NightSky.cpp
+        source/ui/Theme.cpp)
+    if(APPLE)
+        list(APPEND OVERCAST_UI_SOURCES source/ui/ReducedMotion.mm)
+    else()
+        list(APPEND OVERCAST_UI_SOURCES source/ui/ReducedMotion.cpp)
+    endif()
+
     target_sources(Overcast PRIVATE
         source/PluginProcessor.cpp
-        source/Parameters.cpp)
+        source/Parameters.cpp
+        ${OVERCAST_UI_SOURCES})
+    target_include_directories(Overcast PRIVATE source)
 
     target_compile_definitions(Overcast PUBLIC
         JUCE_WEB_BROWSER=0
@@ -79,12 +106,33 @@ if(OVERCAST_BUILD_PLUGIN)
     target_link_libraries(Overcast
         PRIVATE
             overcast_dsp
+            OvercastAssets
             juce::juce_audio_utils
             juce::juce_dsp
         PUBLIC
             juce::juce_recommended_config_flags
             juce::juce_recommended_lto_flags
             juce::juce_recommended_warning_flags)
+
+    if(OVERCAST_BUILD_SNAPSHOT)
+        juce_add_console_app(OvercastSnapshot PRODUCT_NAME "OvercastSnapshot")
+        target_sources(OvercastSnapshot PRIVATE
+            tools/Snapshot.cpp
+            source/PluginProcessor.cpp
+            source/Parameters.cpp
+            ${OVERCAST_UI_SOURCES})
+        target_include_directories(OvercastSnapshot PRIVATE source)
+        target_compile_definitions(OvercastSnapshot PRIVATE
+            JucePlugin_Name="Overcast"
+            JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=0)
+        target_link_libraries(OvercastSnapshot PRIVATE
+            overcast_dsp
+            OvercastAssets
+            juce::juce_audio_utils
+            juce::juce_dsp
+            juce::juce_recommended_config_flags)
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------
