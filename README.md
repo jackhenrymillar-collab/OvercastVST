@@ -118,5 +118,6 @@ CI also runs `auval` and `pluginval` (strictness 10, including its editor tests)
 
 Notes:
 - Machines built on a feedback network (all but Sheet, Coil and Aurora) slowly rotate their feedback matrix, so the Mod knob smooths the tail without detuning it much.
+- Long decays keep their tails smooth on their own: from 3 s to 8 s of Decay (and whenever frozen) the matrix rotation grows and speeds up whatever Mod is set to. A still network's long tail otherwise splits into separate pitches that ring on, worst below 500 Hz.
 - Each machine remembers its own knob settings. Switching machines and back restores what you had.
 - **Coil** limits Decay to 0.3 to 12 s, like a real spring tank.

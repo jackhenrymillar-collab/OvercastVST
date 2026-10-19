@@ -485,3 +485,83 @@ TEST_CASE ("Moving knobs that change delay lengths doesn't click or zip")
     }
     CHECK (20.0f * std::log10 (worst + 1.0e-12f) < -70.0f); // -60 dB at the earlier 3x louder test tone
 }
+
+// How peaky a slice of a tail's spectrum is, between loHz and hiHz, at 0.5 Hz
+// resolution. Each bin's power is divided by the average of its neighbours; for a
+// smooth noise-like tail the result scatters like noise and this measures about 1.
+// A tail that has split into separate ringing pitches is a row of spikes with gaps
+// between them, and measures 5 to 10.
+static double ringingPitches (const std::vector<float>& x, double fs, double startSeconds, double loHz, double hiHz)
+{
+    const std::size_t n = static_cast<std::size_t> (2.0 * fs), start = static_cast<std::size_t> (startSeconds * fs);
+    std::vector<double> seg (n);
+    for (std::size_t i = 0; i < n; ++i)
+        seg[i] = x[start + i] * (0.5 - 0.5 * std::cos (6.283185307179586 * static_cast<double> (i) / static_cast<double> (n)));
+
+    const std::size_t k0 = static_cast<std::size_t> (loHz * 2.0), k1 = static_cast<std::size_t> (hiHz * 2.0);
+    constexpr std::size_t kHalf = 50;
+    std::vector<double> power;
+    for (std::size_t k = k0 - kHalf; k < k1 + kHalf; ++k)
+    {
+        const double w = 6.283185307179586 * static_cast<double> (k) / static_cast<double> (n);
+        const double cw = std::cos (w), sw = std::sin (w);
+        double re = 0.0, im = 0.0, c = 1.0, s = 0.0;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            re += seg[i] * c;
+            im -= seg[i] * s;
+            const double nc = c * cw - s * sw;
+            s = s * cw + c * sw;
+            c = nc;
+        }
+        power.push_back (re * re + im * im);
+    }
+
+    double sumQ = 0.0, sumQ2 = 0.0;
+    for (std::size_t j = kHalf; j + kHalf < power.size(); ++j)
+    {
+        double local = 0.0;
+        for (std::size_t m = j - kHalf; m <= j + kHalf; ++m)
+            local += power[m];
+        const double q = power[j] / (local / static_cast<double> (2 * kHalf + 1) + 1.0e-30);
+        sumQ += q;
+        sumQ2 += q * q;
+    }
+    const double count = static_cast<double> (power.size() - 2 * kHalf);
+    return (sumQ2 / count) / ((sumQ / count) * (sumQ / count)) - 1.0;
+}
+
+// Long decays used to ring at separate pitches below 1 kHz, right where piano notes
+// sit (Chamber and Space Map measured 5 to 10 at 9 s, with Mod at 30% or off). The
+// network's mixing matrix now turns faster as the decay grows, which keeps the tail
+// smooth at every Mod setting.
+TEST_CASE ("Long tails don't ring at separate pitches")
+{
+    const auto id = GENERATE (static_cast<int> (MachineId::chamber), static_cast<int> (MachineId::arena),
+                              static_cast<int> (MachineId::rise), static_cast<int> (MachineId::blossom),
+                              static_cast<int> (MachineId::haze), static_cast<int> (MachineId::halo),
+                              static_cast<int> (MachineId::nebula), static_cast<int> (MachineId::clearNight),
+                              static_cast<int> (MachineId::spaceMap));
+    const float mod = GENERATE (0.0f, 0.3f);
+
+    const double fs = 16000.0;
+    auto p = defaults();
+    p.decaySeconds = 12.0f;
+    p.mod = mod;
+    p.param1 = 0.5f;
+    p.param2 = 0.5f;
+    auto m = make (id, fs, p);
+    std::vector<float> in (static_cast<std::size_t> (fs * 5.5), 0.0f);
+    in[0] = 1.0f;
+    const auto out = render (*m, in);
+    std::vector<float> sum (out.l.size());
+    for (std::size_t i = 0; i < sum.size(); ++i)
+        sum[i] = out.l[i] + out.r[i];
+
+    for (const auto band : { std::pair { 100.0, 400.0 }, std::pair { 400.0, 1000.0 } })
+    {
+        const double peaky = ringingPitches (sum, fs, 3.0, band.first, band.second);
+        INFO (kNames[id] << " with Mod " << mod << ", " << band.first << " to " << band.second << " Hz: " << peaky);
+        CHECK (peaky < 2.5);
+    }
+}
