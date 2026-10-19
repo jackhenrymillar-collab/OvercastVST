@@ -59,6 +59,7 @@ private:
     std::atomic<float>* highCut = nullptr;
     std::atomic<float>* freeze = nullptr;
     std::atomic<float>* killDry = nullptr;
+    std::atomic<float>* spillover = nullptr;
     std::atomic<float>* mixLaw = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OvercastProcessor)

@@ -12,6 +12,7 @@ struct MachineParams
     float mod = 0.5f;            // 0 to 1, tail modulation depth
     float param1 = 0.0f;         // 0 to 1, machine-specific
     float param2 = 0.5f;         // 0 to 1, machine-specific
+    float preDelayMs = 20.0f;    // only read by machines that consume pre-delay (see below)
     bool freeze = false;         // hold the tail indefinitely
 };
 
@@ -28,6 +29,14 @@ public:
 
     // inL/inR may alias each other (mono input). wetL/wetR must not alias the inputs.
     virtual void process (const float* inL, const float* inR, float* wetL, float* wetR, int numSamples) = 0;
+
+    // True when the machine uses the Pre-delay knob for its own purpose (Tape Echo uses it
+    // as the echo time), so the engine skips its own pre-delay.
+    virtual bool consumesPreDelay() const noexcept { return false; }
+
+    // Optional per-sample gain for the dry signal for the block just processed (Rise uses
+    // it to swell the dry signal too). nullptr means the dry signal is untouched.
+    virtual const float* dryEnvelope() const noexcept { return nullptr; }
 };
 
 } // namespace overcast::dsp

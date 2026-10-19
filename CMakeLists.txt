@@ -23,9 +23,11 @@ include(FetchContent)
 # DSP library: plain C++, no JUCE, so it can be tested on any platform.
 # ---------------------------------------------------------------------------
 add_library(overcast_dsp STATIC
-    source/dsp/PlateReverb.cpp
+    source/dsp/machines/PlateReverb.cpp
     source/dsp/ReverbEngine.cpp)
 target_include_directories(overcast_dsp PUBLIC source)
+# The library is linked into plugin bundles, which are shared libraries.
+set_target_properties(overcast_dsp PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_features(overcast_dsp PUBLIC cxx_std_20)
 if(MSVC)
     target_compile_options(overcast_dsp PRIVATE /W4)
@@ -98,7 +100,8 @@ if(OVERCAST_BUILD_TESTS)
     add_executable(overcast_tests
         tests/DspTests.cpp
         tests/PlateTests.cpp
-        tests/EngineTests.cpp)
+        tests/EngineTests.cpp
+        tests/MachineTests.cpp)
     target_link_libraries(overcast_tests PRIVATE overcast_dsp Catch2::Catch2WithMain)
 
     enable_testing()

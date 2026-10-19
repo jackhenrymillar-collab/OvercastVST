@@ -24,8 +24,7 @@ namespace ParamID
     inline constexpr auto mixLaw    = "mixlaw";
 }
 
-// The full machine list is declared now so parameter values stay stable as machines are added.
-// Only "Sheet" is implemented in Phase 1; the others currently fall back to it.
+// The order must match dsp::MachineId and must never change (saved sessions store the index).
 juce::StringArray machineNames();
 
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

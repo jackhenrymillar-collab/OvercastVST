@@ -7,6 +7,14 @@ namespace
 {
     constexpr float kToneSplitHz = 1000.0f;
     constexpr float kToneMaxDb = 6.0f;
+    constexpr float kSilence = 1.0e-5f;     // -100 dBFS: a spilling tail below this is finished
+    constexpr float kSilenceHoldSeconds = 0.3f;
+}
+
+ReverbEngine::ReverbEngine()
+{
+    for (int i = 0; i < kNumMachines; ++i)
+        machines[static_cast<std::size_t> (i)] = createMachine (static_cast<MachineId> (i));
 }
 
 void ReverbEngine::mixGains (float mix, MixLaw law, bool killDry, float& dry, float& wet) noexcept
@@ -30,29 +38,36 @@ void ReverbEngine::mixGains (float mix, MixLaw law, bool killDry, float& dry, fl
 void ReverbEngine::prepare (double sampleRate, int maxBlockSize)
 {
     fs = sampleRate;
-    maxBlock = maxBlockSize;
+    maxBlock = std::max (1, maxBlockSize);
 
-    plate->prepare (sampleRate, maxBlockSize);
+    for (auto& m : machines)
+        m->prepare (sampleRate, maxBlock);
 
     const auto maxPre = static_cast<std::size_t> (kMaxPreDelayMs * 0.001 * sampleRate) + 8;
     preDelayL.prepare (maxPre);
     preDelayR.prepare (maxPre);
 
-    for (auto* v : { &preL, &preR, &wetL, &wetR })
-        v->assign (static_cast<std::size_t> (maxBlockSize), 0.0f);
+    for (auto* v : { &preL, &preR, &wetL, &wetR, &oldL, &oldR, &zeros })
+        v->assign (static_cast<std::size_t> (maxBlock), 0.0f);
 
     preDelaySamples.prepare (sampleRate, 80.0f);
     for (auto* s : { &dryGain, &wetGain, &toneLow, &toneHigh })
         s->prepare (sampleRate, 20.0f);
     lowCutHz.prepare (sampleRate, 30.0f);
     highCutHz.prepare (sampleRate, 30.0f);
+    fadeStep = 1.0f / (kSwitchFadeMs * 0.001f * static_cast<float> (sampleRate));
 
+    prepared = true;
+    active = std::clamp (params.machine, 0, kNumMachines - 1);
     reset();
 }
 
 void ReverbEngine::reset()
 {
-    plate->reset();
+    for (auto& m : machines)
+        m->reset();
+    previous = -1;
+    fadeIn = 1.0f;
     preDelayL.reset(); preDelayR.reset();
     lowCutL.reset(); lowCutR.reset(); highCutL.reset(); highCutR.reset();
     toneSplitL.reset(); toneSplitR.reset();
@@ -63,13 +78,46 @@ void ReverbEngine::reset()
     appliedLowCutHz = appliedHighCutHz = -1.0f;
 }
 
+void ReverbEngine::switchTo (int machine)
+{
+    if (machine == active)
+        return;
+
+    // Only one outgoing machine at a time: a third switch cuts the oldest tail.
+    if (previous >= 0)
+        machines[static_cast<std::size_t> (previous)]->reset();
+
+    previous = active;
+    previousSpills = params.spillover;
+    fadeOut = 1.0f;
+    quietSamples = 0;
+
+    // The outgoing machine stops being fed new input; never leave it frozen.
+    MachineParams old = params.machineParams;
+    old.freeze = false;
+    machines[static_cast<std::size_t> (previous)]->setParams (old);
+
+    active = machine;
+    machines[static_cast<std::size_t> (active)]->reset();
+    fadeIn = 0.0f;
+}
+
 void ReverbEngine::setParams (const EngineParams& p)
 {
+    const int requested = std::clamp (p.machine, 0, kNumMachines - 1);
     params = p;
-    plate->setParams (p.machineParams);
+    if (prepared)
+        switchTo (requested);
+    else
+        active = requested;
 
-    const float pre = std::clamp (p.preDelayMs, 0.0f, kMaxPreDelayMs) * 0.001f * static_cast<float> (fs);
-    preDelaySamples.setTarget (std::max (pre, 2.0f));
+    auto& machine = *machines[static_cast<std::size_t> (active)];
+    MachineParams mp = p.machineParams;
+    mp.preDelayMs = p.preDelayMs;
+    machine.setParams (mp);
+
+    const float preMs = machine.consumesPreDelay() ? 0.0f : std::clamp (p.preDelayMs, 0.0f, kMaxPreDelayMs);
+    preDelaySamples.setTarget (std::max (preMs * 0.001f * static_cast<float> (fs), 2.0f));
 
     float d = 1.0f, w = 0.0f;
     mixGains (p.mix, p.mixLaw, p.killDry, d, w);
@@ -90,6 +138,7 @@ void ReverbEngine::process (float* left, float* right, int numSamples)
     while (offset < numSamples)
     {
         const int n = std::min (numSamples - offset, maxBlock);
+        const auto un = static_cast<std::size_t> (n);
         float* L = left + offset;
         float* R = right + offset;
 
@@ -108,25 +157,57 @@ void ReverbEngine::process (float* left, float* right, int numSamples)
         }
 
         // Pre-delay (fractional read so changes glide instead of clicking).
-        for (int i = 0; i < n; ++i)
+        for (std::size_t i = 0; i < un; ++i)
         {
             const float d = preDelaySamples.next();
             preDelayL.push (L[i]);
             preDelayR.push (R[i]);
-            preL[static_cast<std::size_t> (i)] = preDelayL.readFractional (d);
-            preR[static_cast<std::size_t> (i)] = preDelayR.readFractional (d);
+            preL[i] = preDelayL.readFractional (d);
+            preR[i] = preDelayR.readFractional (d);
         }
 
-        activeMachine().process (preL.data(), preR.data(), wetL.data(), wetR.data(), n);
+        auto& current = *machines[static_cast<std::size_t> (active)];
+        current.process (preL.data(), preR.data(), wetL.data(), wetR.data(), n);
+        const float* dryEnv = current.dryEnvelope();
+
+        // Level-match the machine, and fade it in over 30 ms after a switch.
+        const float trimActive = kMachineTrim[active];
+        for (std::size_t i = 0; i < un; ++i)
+        {
+            fadeIn = std::min (1.0f, fadeIn + fadeStep);
+            wetL[i] *= trimActive * fadeIn;
+            wetR[i] *= trimActive * fadeIn;
+        }
+
+        // The outgoing machine: fed silence, it either rings out (spillover) or fades in 30 ms.
+        if (previous >= 0)
+        {
+            auto& old = *machines[static_cast<std::size_t> (previous)];
+            old.process (zeros.data(), zeros.data(), oldL.data(), oldR.data(), n);
+            const float trim = kMachineTrim[previous];
+            float peak = 0.0f;
+            for (std::size_t i = 0; i < un; ++i)
+            {
+                if (! previousSpills)
+                    fadeOut = std::max (0.0f, fadeOut - fadeStep);
+                wetL[i] += fadeOut * trim * oldL[i];
+                wetR[i] += fadeOut * trim * oldR[i];
+                peak = std::max ({ peak, std::abs (oldL[i]), std::abs (oldR[i]) });
+            }
+            quietSamples = peak * fadeOut < kSilence ? quietSamples + n : 0;
+            if (fadeOut <= 0.0f || quietSamples > static_cast<int> (kSilenceHoldSeconds * fs))
+            {
+                old.reset();
+                previous = -1;
+            }
+        }
 
         const float toneA = OnePoleLowpass::coefficientFor (kToneSplitHz, fs);
-        for (int i = 0; i < n; ++i)
+        for (std::size_t i = 0; i < un; ++i)
         {
-            const auto k = static_cast<std::size_t> (i);
             const float tl = toneLow.next(), th = toneHigh.next();
-
-            float wl = wetL[k];
-            float wr = wetR[k];
+            float wl = wetL[i];
+            float wr = wetR[i];
 
             // Tilt EQ: split at 1 kHz, raise one side and lower the other.
             const float lowL = toneSplitL.process (wl, toneA);
@@ -142,8 +223,9 @@ void ReverbEngine::process (float* left, float* right, int numSamples)
 
             const float dg = dryGain.next();
             const float wg = wetGain.next();
-            L[i] = L[i] * dg + wl * wg;
-            R[i] = R[i] * dg + wr * wg;
+            const float de = dryEnv != nullptr ? dryEnv[i] : 1.0f;
+            L[i] = L[i] * (dg * de) + wl * wg;
+            R[i] = R[i] * (dg * de) + wr * wg;
         }
 
         offset += n;

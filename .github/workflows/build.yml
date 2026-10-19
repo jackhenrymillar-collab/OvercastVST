@@ -38,6 +38,31 @@ jobs:
           $PV --strictness-level 10 --skip-gui-tests --validate-in-process "build/Overcast_artefacts/Release/VST3/Overcast.vst3"
           $PV --strictness-level 10 --skip-gui-tests --validate-in-process "$HOME/Library/Audio/Plug-Ins/Components/Overcast.component"
 
+      - name: Package plugins
+        run: |
+          mkdir -p dist
+          cp -R "build/Overcast_artefacts/Release/VST3/Overcast.vst3" dist/
+          cp -R "$HOME/Library/Audio/Plug-Ins/Components/Overcast.component" dist/
+          cp -R "build/Overcast_artefacts/Release/Standalone/Overcast.app" dist/
+          cat > dist/INSTALL.txt <<'TXT'
+          Overcast (unsigned development build)
+
+          1. Copy Overcast.vst3 to      ~/Library/Audio/Plug-Ins/VST3/
+             Copy Overcast.component to ~/Library/Audio/Plug-Ins/Components/
+          2. These builds aren't notarised yet, so macOS blocks them. In Terminal run:
+               xattr -cr ~/Library/Audio/Plug-Ins/VST3/Overcast.vst3
+               xattr -cr ~/Library/Audio/Plug-Ins/Components/Overcast.component
+          3. Restart your DAW and rescan plug-ins.
+          TXT
+          ditto -c -k --keepParent dist Overcast-macOS.zip
+
+      - name: Upload plugins
+        uses: actions/upload-artifact@v4
+        with:
+          name: Overcast-macOS
+          path: Overcast-macOS.zip
+          retention-days: 30
+
   linux-tests:
     name: Linux (DSP tests)
     runs-on: ubuntu-24.04

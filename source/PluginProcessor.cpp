@@ -21,6 +21,7 @@ OvercastProcessor::OvercastProcessor()
     highCut  = state.getRawParameterValue (ParamID::highCut);
     freeze   = state.getRawParameterValue (ParamID::freeze);
     killDry  = state.getRawParameterValue (ParamID::killDry);
+    spillover = state.getRawParameterValue (ParamID::spillover);
     mixLaw   = state.getRawParameterValue (ParamID::mixLaw);
 }
 
@@ -59,6 +60,7 @@ dsp::EngineParams OvercastProcessor::readParams() const noexcept
     p.lowCutHz = lowCut->load();
     p.highCutHz = highCut->load();
     p.killDry = killDry->load() > 0.5f;
+    p.spillover = spillover->load() > 0.5f;
     p.mixLaw = mixLaw->load() > 0.5f ? dsp::MixLaw::pedal : dsp::MixLaw::equalPower;
     return p;
 }
