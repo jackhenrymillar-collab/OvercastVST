@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
 
 namespace overcast
 {
@@ -83,13 +84,37 @@ void OvercastProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
 juce::AudioProcessorEditor* OvercastProcessor::createEditor()
 {
-    // Phase 1 uses the generic editor. The night-sky UI arrives in Phase 4.
-    return new juce::GenericAudioProcessorEditor (*this);
+    return new OvercastEditor (*this);
+}
+
+int OvercastProcessor::getNumPrograms()
+{
+    return presets.getNumFactoryPresets();
+}
+
+int OvercastProcessor::getCurrentProgram()
+{
+    const int index = presets.getCurrentIndex();
+    return index >= 0 && index < presets.getNumFactoryPresets() ? index : 0;
+}
+
+void OvercastProcessor::setCurrentProgram (int index)
+{
+    if (index >= 0 && index < presets.getNumFactoryPresets())
+        presets.loadPreset (index);
+}
+
+const juce::String OvercastProcessor::getProgramName (int index)
+{
+    return index >= 0 && index < presets.getNumFactoryPresets() ? presets.getPresetName (index) : juce::String();
 }
 
 void OvercastProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (auto xml = state.copyState().createXml())
+    auto copy = state.copyState();
+    presets.writeToState (copy);
+    copy.setProperty ("uiScale", uiScale.load(), nullptr);
+    if (auto xml = copy.createXml())
         copyXmlToBinary (*xml, destData);
 }
 
@@ -97,7 +122,21 @@ void OvercastProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (state.state.getType()))
-            state.replaceState (juce::ValueTree::fromXml (*xml));
+        {
+            const auto tree = juce::ValueTree::fromXml (*xml);
+            state.replaceState (tree);
+
+            // replaceState skips a parameter whose stored value already matches, judged
+            // after snapping. A switch left at a raw 0.3 (reads as off) would then never
+            // be set back to exactly 0, so set every parameter explicitly.
+            for (const auto& child : tree)
+                if (child.hasType ("PARAM"))
+                    if (auto* param = state.getParameter (child.getProperty ("id").toString()))
+                        param->setValueNotifyingHost (param->convertTo0to1 (static_cast<float> (child.getProperty ("value"))));
+
+            presets.readFromState (tree);
+            uiScale = static_cast<float> (tree.getProperty ("uiScale", 1.0));
+        }
 }
 
 } // namespace overcast
