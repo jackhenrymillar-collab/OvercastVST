@@ -66,6 +66,14 @@ struct DecaySettings
 
 // N-line feedback delay network with a Hadamard mixing matrix, three-band decay,
 // smoothed (glide-free) delay changes, gentle delay modulation and a lossless freeze.
+//
+// Modulation is split between two methods. Half of it wobbles the delay lengths as
+// before. The other half slowly rotates the mixing matrix (Schlecht and Habets, "Time-
+// varying feedback matrices in feedback delay networks", 2015): after the Hadamard mix,
+// each pair of lines (i, i + N/2) is turned by an angle that swings slowly around zero,
+// each pair at its own rate. A rotation is orthogonal at every angle, so the network
+// stays lossless and stable, and the echo pattern keeps changing without bending the
+// pitch of what rings. With Mod at zero the angles are zero: the plain Hadamard network.
 template <std::size_t N>
 class Fdn
 {
@@ -94,6 +102,13 @@ public:
         }
         inputGain.prepare (fs, 50.0f);
         modDepth.prepare (fs, 50.0f);
+        rotation.prepare (fs, 50.0f);
+        for (std::size_t k = 0; k < N / 2; ++k)
+        {
+            // 0.09 to about 0.4 Hz, spread so no two pairs line up.
+            const float hz = 0.09f + 0.043f * static_cast<float> (k) * (8.0f / static_cast<float> (N));
+            rotStep[k] = static_cast<float> (kRotationBlock) * hz / static_cast<float> (fs);
+        }
         reset();
     }
 
@@ -112,6 +127,14 @@ public:
         }
         inputGain.snapTo (inputGain.getTarget());
         modDepth.snapTo (modDepth.getTarget());
+        rotation.snapTo (rotation.getTarget());
+        for (std::size_t k = 0; k < N / 2; ++k)
+        {
+            rotPhase[k] = 0.37f * static_cast<float> (k);
+            rotCos[k] = 1.0f; rotSin[k] = 0.0f;
+            rotCosStep[k] = rotSinStep[k] = 0.0f;
+        }
+        rotCounter = 0;
     }
 
     // Delay lengths in milliseconds; changes glide smoothly.
@@ -147,8 +170,15 @@ public:
         updateGains();
     }
 
-    // depth 0..1 maps to 0..kMaxModMs of delay excursion.
-    void setModulation (float depth) { modDepth.setTarget (std::clamp (depth, 0.0f, 1.0f) * msToSamples (kMaxModMs, fs)); }
+    // depth 0..1 sets both the matrix rotation and the delay excursion. delayShare is the
+    // part of kMaxModMs the delays may swing: half by default, so the rotation does the
+    // rest of the work and sustained notes bend less in pitch.
+    void setModulation (float depth, float delayShare = 0.5f)
+    {
+        const float d = std::clamp (depth, 0.0f, 1.0f);
+        modDepth.setTarget (std::clamp (delayShare, 0.0f, 1.0f) * d * msToSamples (kMaxModMs, fs));
+        rotation.setTarget (d);
+    }
 
     void setFreeze (bool f)
     {
@@ -161,16 +191,46 @@ public:
     template <typename LineHook>
     void process (float inL, float inR, float& outL, float& outR, LineHook&& hook) noexcept
     {
+        float sumL = 0.0f, sumR = 0.0f;
+        step ([&] (std::size_t i) { return signs[i] * (i % 2 == 0 ? inL : inR); },
+              [&] (std::size_t i, float y)
+              {
+                  if (i % 2 == 0) sumL += signs[i] * y;
+                  else            sumR += signs[i] * y;
+              },
+              hook);
+        constexpr float outNorm = 1.0f / static_cast<float> (N / 2);
+        outL = sumL * std::sqrt (outNorm);
+        outR = sumR * std::sqrt (outNorm);
+    }
+
+    void process (float inL, float inR, float& outL, float& outR) noexcept
+    {
+        process (inL, inR, outL, outR, [] (std::size_t, float v) { return v; });
+    }
+
+    // Per-line input and output, for machines that feed and tap each line through their
+    // own filters (Nebula's velvet-noise filters). in[i] is added to line i; out[i] is
+    // what line i delivers this sample.
+    void processLines (const std::array<float, N>& in, std::array<float, N>& out) noexcept
+    {
+        step ([&] (std::size_t i) { return in[i]; },
+              [&] (std::size_t i, float y) { out[i] = y; },
+              [] (std::size_t, float v) { return v; });
+    }
+
+private:
+    template <typename Inject, typename Tap, typename LineHook>
+    void step (Inject&& inject, Tap&& tap, LineHook&& hook) noexcept
+    {
         const float depth = modDepth.next();
         const float in = inputGain.next();
         std::array<float, N> y {};
-        float sumL = 0.0f, sumR = 0.0f;
         for (std::size_t i = 0; i < N; ++i)
         {
             const float d = delays[i].next() + depth * (0.5f + 0.5f * lfos[i].next()) + 2.0f;
             y[i] = lines[i].readFractional (d);
-            if (i % 2 == 0) sumL += signs[i] * y[i];
-            else            sumR += signs[i] * y[i];
+            tap (i, y[i]);
             float v = decay[i].process (y[i], aLow, aHigh, gLow[i].next(), gMid[i].next(), gHigh[i].next());
             if (loopAllpassGain > 0.0f)
             {
@@ -184,26 +244,73 @@ public:
             }
             y[i] = hook (i, v);
         }
-        hadamard (y);
+        if (matrix != nullptr)
+            mix (y);
+        else
+            hadamard (y);
+        rotate (y);
         for (std::size_t i = 0; i < N; ++i)
-            lines[i].push (y[i] + in * signs[i] * (i % 2 == 0 ? inL : inR));
-
-        constexpr float outNorm = 1.0f / static_cast<float> (N / 2);
-        outL = sumL * std::sqrt (outNorm);
-        outR = sumR * std::sqrt (outNorm);
+            lines[i].push (y[i] + in * inject (i));
     }
 
-    void process (float inL, float inR, float& outL, float& outR) noexcept
-    {
-        process (inL, inR, outL, outR, [] (std::size_t, float v) { return v; });
-    }
-
+public:
     // Energy loss of the loop is bounded by the decay gains, so the network is stable for
     // any setting where every gain is <= 1 (the mixing matrix is orthogonal).
     static constexpr float kMaxModMs = 3.0f;
     static constexpr float kMaxLoopAllpassMs = 8.0f;
 
+    // Replace the Hadamard mix with another orthogonal matrix (row-major, N * N), or
+    // nullptr to go back. The caller keeps the array alive. Clear Night uses this for its
+    // optimised colourless matrix.
+    void setMatrix (const std::array<float, N * N>* m) noexcept { matrix = m; }
+
 private:
+    void mix (std::array<float, N>& y) const noexcept
+    {
+        std::array<float, N> out {};
+        const auto& a = *matrix;
+        for (std::size_t r = 0; r < N; ++r)
+        {
+            float sum = 0.0f;
+            for (std::size_t c = 0; c < N; ++c)
+                sum += a[r * N + c] * y[c];
+            out[r] = sum;
+        }
+        y = out;
+    }
+
+    void rotate (std::array<float, N>& y) noexcept
+    {
+        constexpr std::size_t H = N / 2;
+        if (rotCounter == 0)
+        {
+            // Every few samples, work out where each angle will be at the end of the next
+            // block and glide (cos, sin) there in straight steps. A straight step between
+            // two points on the unit circle stays inside it, so the mix can only lose a
+            // hair of energy, never gain it.
+            rotCounter = kRotationBlock;
+            const float amount = rotation.skip (static_cast<int> (kRotationBlock)) * kMaxRotation;
+            for (std::size_t k = 0; k < H; ++k)
+            {
+                rotPhase[k] += rotStep[k];
+                if (rotPhase[k] >= 1.0f) rotPhase[k] -= 1.0f;
+                const float angle = amount * std::sin (6.28318531f * rotPhase[k]);
+                const float inv = 1.0f / static_cast<float> (kRotationBlock);
+                rotCosStep[k] = (std::cos (angle) - rotCos[k]) * inv;
+                rotSinStep[k] = (std::sin (angle) - rotSin[k]) * inv;
+            }
+        }
+        --rotCounter;
+        for (std::size_t k = 0; k < H; ++k)
+        {
+            const float c = rotCos[k] += rotCosStep[k];
+            const float s = rotSin[k] += rotSinStep[k];
+            const float u = y[k], v = y[k + H];
+            y[k] = c * u - s * v;
+            y[k + H] = s * u + c * v;
+        }
+    }
+
     void updateGains()
     {
         for (std::size_t i = 0; i < N; ++i)
@@ -236,7 +343,12 @@ private:
     std::array<Smoother, N> delays, gLow, gMid, gHigh;
     std::array<Lfo, N> lfos;
     std::array<float, N> signs {};
-    Smoother inputGain, modDepth;
+    Smoother inputGain, modDepth, rotation;
+    const std::array<float, N * N>* matrix = nullptr;
+    std::array<float, N / 2> rotCos {}, rotSin {}, rotCosStep {}, rotSinStep {}, rotPhase {}, rotStep {};
+    std::size_t rotCounter = 0;
+    static constexpr std::size_t kRotationBlock = 16;
+    static constexpr float kMaxRotation = 0.785398f; // 45 degrees at full Mod
     DecaySettings decaySettings;
     float aLow = 0.0f, aHigh = 0.0f;
     bool frozen = false;
@@ -321,6 +433,9 @@ public:
     }
 
     void setNumTaps (std::size_t n) { numTaps = std::min (n, MaxTaps); }
+
+    // Write the input without reading any taps (keeps an idle bank ready to use).
+    void push (float x) noexcept { line.push (x); }
 
     float process (float x) noexcept
     {

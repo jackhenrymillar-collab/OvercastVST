@@ -24,6 +24,129 @@ OvercastProcessor::OvercastProcessor()
     killDry  = state.getRawParameterValue (ParamID::killDry);
     spillover = state.getRawParameterValue (ParamID::spillover);
     mixLaw   = state.getRawParameterValue (ParamID::mixLaw);
+    knobs = { decay, preDelay, mix, tone, mod, param1, param2 };
+
+    // Machines start from their factory preset's knobs until you change them.
+    for (int m = 0; m < static_cast<int> (memory.numMachines()); ++m)
+        if (const auto k = presets.getFactoryKnobs (m))
+            memory.store (m, *k);
+    memory.setCurrent (currentMachine());
+    memory.store (currentMachine(), readKnobs());
+
+    presets.onBeforeApply = [this] { beginBulkChange(); };
+    presets.onAfterApply = [this] { endBulkChange(); };
+    state.addParameterListener (ParamID::machine, this);
+}
+
+OvercastProcessor::~OvercastProcessor()
+{
+    state.removeParameterListener (ParamID::machine, this);
+    cancelPendingUpdate();
+}
+
+namespace
+{
+    // Parameter IDs of the knobs each machine remembers, in MachineMemory order.
+    constexpr std::array<const char*, MachineMemory::kNumKnobs> kKnobIds {
+        ParamID::decay, ParamID::preDelay, ParamID::mix, ParamID::tone,
+        ParamID::mod, ParamID::param1, ParamID::param2 };
+    constexpr auto kMemoryTag = "MACHINE_KNOBS";
+}
+
+int OvercastProcessor::currentMachine() const noexcept
+{
+    return juce::roundToInt (machine->load());
+}
+
+MachineMemory::Knobs OvercastProcessor::readKnobs() const noexcept
+{
+    MachineMemory::Knobs k {};
+    for (std::size_t i = 0; i < k.size(); ++i)
+        k[i] = knobs[i]->load();
+    return k;
+}
+
+void OvercastProcessor::applyKnobs (const MachineMemory::Knobs& k)
+{
+    for (std::size_t i = 0; i < k.size(); ++i)
+        if (auto* param = state.getParameter (kKnobIds[i]))
+        {
+            param->beginChangeGesture();
+            param->setValueNotifyingHost (param->convertTo0to1 (k[i]));
+            param->endChangeGesture();
+        }
+}
+
+void OvercastProcessor::parameterChanged (const juce::String&, float)
+{
+    // May arrive on the audio thread (host automation), so the work is deferred.
+    if (! holdMemory.load())
+        triggerAsyncUpdate();
+}
+
+void OvercastProcessor::handleAsyncUpdate()
+{
+    const juce::ScopedLock sl (memoryLock);
+    if (holdMemory.load())
+        return;
+    if (const auto restored = memory.switchTo (currentMachine(), readKnobs()))
+    {
+        holdMemory = true;
+        applyKnobs (*restored);
+        holdMemory = false;
+    }
+}
+
+void OvercastProcessor::beginBulkChange()
+{
+    // Finish any machine change still waiting, then keep the knobs of the machine
+    // being left before the preset overwrites them.
+    if (juce::MessageManager::existsAndIsCurrentThread())
+        handleUpdateNowIfNeeded();
+    const juce::ScopedLock sl (memoryLock);
+    holdMemory = true;
+    memory.store (memory.current(), readKnobs());
+}
+
+void OvercastProcessor::endBulkChange()
+{
+    // The preset's knobs become the memory of the machine it selected.
+    cancelPendingUpdate();
+    const juce::ScopedLock sl (memoryLock);
+    memory.setCurrent (currentMachine());
+    memory.store (currentMachine(), readKnobs());
+    holdMemory = false;
+}
+
+void OvercastProcessor::writeMemory (juce::ValueTree& tree) const
+{
+    juce::ValueTree node (kMemoryTag);
+    const juce::ScopedLock sl (memoryLock);
+    for (int m = 0; m < static_cast<int> (memory.numMachines()); ++m)
+        if (const auto k = memory.recall (m))
+        {
+            juce::ValueTree slot ("MACHINE");
+            slot.setProperty ("index", m, nullptr);
+            for (std::size_t i = 0; i < k->size(); ++i)
+                slot.setProperty (kKnobIds[i], (*k)[i], nullptr);
+            node.appendChild (slot, nullptr);
+        }
+    tree.appendChild (node, nullptr);
+}
+
+void OvercastProcessor::readMemory (const juce::ValueTree& node)
+{
+    for (const auto& slot : node)
+    {
+        const int m = slot.getProperty ("index", -1);
+        if (m < 0 || m >= static_cast<int> (memory.numMachines()))
+            continue;
+        // Anything missing keeps what the machine already had.
+        auto k = memory.recall (m).value_or (readKnobs());
+        for (std::size_t i = 0; i < k.size(); ++i)
+            k[i] = static_cast<float> (slot.getProperty (kKnobIds[i], k[i]));
+        memory.store (m, k);
+    }
 }
 
 bool OvercastProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -114,6 +237,7 @@ void OvercastProcessor::getStateInformation (juce::MemoryBlock& destData)
     auto copy = state.copyState();
     presets.writeToState (copy);
     copy.setProperty ("uiScale", uiScale.load(), nullptr);
+    writeMemory (copy);
     if (auto xml = copy.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -123,7 +247,11 @@ void OvercastProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (state.state.getType()))
         {
-            const auto tree = juce::ValueTree::fromXml (*xml);
+            auto tree = juce::ValueTree::fromXml (*xml);
+            const auto memoryNode = tree.getChildWithName (kMemoryTag);
+            tree.removeChild (memoryNode, nullptr);
+
+            holdMemory = true;
             state.replaceState (tree);
 
             // replaceState skips a parameter whose stored value already matches, judged
@@ -136,6 +264,14 @@ void OvercastProcessor::setStateInformation (const void* data, int sizeInBytes)
 
             presets.readFromState (tree);
             uiScale = static_cast<float> (tree.getProperty ("uiScale", 1.0));
+
+            // Sessions saved before knob memory existed keep the factory starting points.
+            cancelPendingUpdate();
+            const juce::ScopedLock sl (memoryLock);
+            readMemory (memoryNode);
+            memory.setCurrent (currentMachine());
+            memory.store (currentMachine(), readKnobs());
+            holdMemory = false;
         }
 }
 

@@ -16,7 +16,7 @@ using namespace overcast::test;
 namespace
 {
     const char* kNames[kNumMachines] = { "Chamber", "Arena", "Sheet", "Coil", "Rise", "Blossom",
-                                         "Haze", "Choir", "Halo", "Tape Echo", "Gate", "Space Map" };
+                                         "Haze", "Aurora", "Halo", "Nebula", "Clear Night", "Space Map" };
 
     MachineParams defaults()
     {
@@ -155,10 +155,7 @@ TEST_CASE ("Freeze never makes a tail grow, and holds it on sustaining machines"
     INFO (kNames[id] << ": energy " << e1 << " then " << e2 << " six seconds later");
     CHECK (e2 <= e1 * 1.1 + 1e-12);
 
-    // Gate is a fixed-length pattern, so there is nothing to hold.
-    const bool sustains = id != static_cast<int> (MachineId::gate);
-    if (sustains)
-        CHECK (e2 > e1 * 0.25);
+    CHECK (e2 > e1 * 0.25);
 }
 
 TEST_CASE ("Hall-type machines decay at the Decay setting")
@@ -220,25 +217,33 @@ TEST_CASE ("Machines are loudness matched")
 // A tail that rings at fixed pitches sounds metallic. That shows up in the impulse
 // response as echoes that repeat at a fixed spacing, so the strongest repeat (the
 // autocorrelation peak) has to stay small. Sheet and Haze measure 0.12 to 0.15;
-// Chamber, Space Map and Gate used to measure 0.3 to 0.45. Coil (spring drip) and
-// Tape Echo repeat on purpose and are left out.
+// Chamber and Space Map used to measure 0.3 to 0.45. Coil (spring drip) repeats on
+// purpose and is left out.
 TEST_CASE ("Tails don't ring with repeating echoes")
 {
-    struct Setting { int id; float param1; float decay; };
+    struct Setting { int id; float param1; float decay; float param2 = 0.5f; };
     const auto setting = GENERATE (
         Setting { static_cast<int> (MachineId::chamber), 0.0f, 1.4f },
         Setting { static_cast<int> (MachineId::chamber), 0.5f, 1.4f },
         Setting { static_cast<int> (MachineId::chamber), 1.0f, 3.0f },
         Setting { static_cast<int> (MachineId::spaceMap), 0.0f, 1.8f },
         Setting { static_cast<int> (MachineId::spaceMap), 0.6f, 1.8f },
-        Setting { static_cast<int> (MachineId::gate), 0.0f, 0.45f },
-        Setting { static_cast<int> (MachineId::gate), 0.5f, 1.0f },
+        Setting { static_cast<int> (MachineId::clearNight), 0.0f, 3.0f },
+        Setting { static_cast<int> (MachineId::clearNight), 1.0f, 3.0f },
+        Setting { static_cast<int> (MachineId::nebula), 0.0f, 3.0f, 0.0f },
+        Setting { static_cast<int> (MachineId::nebula), 1.0f, 3.0f, 1.0f },
+        Setting { static_cast<int> (MachineId::aurora), 0.5f, 3.0f, 0.0f }, // natural tuning; harmony rings on purpose
         Setting { static_cast<int> (MachineId::sheet), 0.5f, 3.0f },
-        Setting { static_cast<int> (MachineId::haze), 0.5f, 3.0f });
+        Setting { static_cast<int> (MachineId::haze), 0.5f, 3.0f },
+        Setting { static_cast<int> (MachineId::arena), 0.0f, 3.0f },
+        Setting { static_cast<int> (MachineId::arena), 1.0f, 3.0f },
+        Setting { static_cast<int> (MachineId::blossom), 0.5f, 3.0f },
+        Setting { static_cast<int> (MachineId::halo), 0.5f, 3.0f });
 
     const double fs = 24000.0; // the machines are sample-rate independent; this keeps the test quick
     auto p = defaults();
     p.param1 = setting.param1;
+    p.param2 = setting.param2;
     p.decaySeconds = setting.decay;
     p.mod = 0.3f;
     auto m = make (setting.id, fs, p);
@@ -281,23 +286,75 @@ TEST_CASE ("Tails don't ring with repeating echoes")
     CHECK (worst < 0.25);
 }
 
-TEST_CASE ("Tape Echo repeats at the Pre-delay time")
+// Strongest repeat between 3 and 40 ms of a highpassed tail: with Harmony up, Aurora's
+// modes sit on the harmonics of A (55 Hz), so the tail repeats every period of the root.
+static double rootPeriodMs (float pitchKnob)
 {
-    const double fs = 48000.0;
+    const double fs = 24000.0;
     auto p = defaults();
-    p.preDelayMs = 250.0f;
-    p.param1 = 0.0f; // first head only
-    p.param2 = 0.0f; // no feedback
+    p.param1 = pitchKnob;
+    p.param2 = 1.0f;
     p.mod = 0.0f;
-    auto m = make (static_cast<int> (MachineId::tapeEcho), fs, p);
-    std::vector<float> in (static_cast<std::size_t> (fs), 0.0f);
+    auto m = make (static_cast<int> (MachineId::aurora), fs, p);
+    std::vector<float> in (static_cast<std::size_t> (fs * 1.2), 0.0f);
     in[0] = 1.0f;
     const auto out = render (*m, in);
-    std::size_t peakAt = 0;
-    float peak = 0.0f;
-    for (std::size_t i = 0; i < out.l.size(); ++i)
-        if (std::abs (out.l[i]) > peak) { peak = std::abs (out.l[i]); peakAt = i; }
-    CHECK (static_cast<double> (peakAt) / fs == Catch::Approx (0.25).margin (0.005));
+    const std::size_t start = static_cast<std::size_t> (0.3 * fs), n = static_cast<std::size_t> (0.8 * fs);
+    const float* x = out.l.data() + start;
+    double best = 0.0;
+    std::size_t bestLag = 0;
+    for (std::size_t lag = static_cast<std::size_t> (0.003 * fs); lag < static_cast<std::size_t> (0.04 * fs); ++lag)
+    {
+        double sum = 0.0;
+        for (std::size_t i = 0; i + lag < n; ++i)
+            sum += static_cast<double> (x[i]) * x[i + lag];
+        if (sum > best) { best = sum; bestLag = lag; }
+    }
+    return 1000.0 * static_cast<double> (bestLag) / fs;
+}
+
+TEST_CASE ("Aurora's Harmony and Pitch knobs tune the tail")
+{
+    CHECK (rootPeriodMs (0.5f) == Catch::Approx (1000.0 / 55.0).epsilon (0.03));  // A
+    CHECK (rootPeriodMs (1.0f) == Catch::Approx (1000.0 / 110.0).epsilon (0.03)); // an octave up
+}
+
+// Abel and Huang's normalised echo density over 20 ms windows: about 1 once the
+// reverb sounds like smooth noise, near 0 while it is still separate echoes.
+static double echoDensity (const std::vector<float>& x, std::size_t centre, std::size_t half)
+{
+    double sq = 0.0;
+    for (std::size_t i = centre - half; i < centre + half; ++i)
+        sq += static_cast<double> (x[i]) * x[i];
+    const double sd = std::sqrt (sq / static_cast<double> (2 * half));
+    std::size_t above = 0;
+    for (std::size_t i = centre - half; i < centre + half; ++i)
+        if (std::abs (x[i]) > sd) ++above;
+    return static_cast<double> (above) / static_cast<double> (2 * half) / 0.3173105;
+}
+
+TEST_CASE ("Nebula is dense from the start")
+{
+    // Averaged over 20 to 80 ms, while a delay network is still separate echoes.
+    const auto early = [] (MachineId id)
+    {
+        const double fs = 48000.0;
+        auto p = defaults();
+        p.param2 = 0.0f;
+        auto m = make (static_cast<int> (id), fs, p);
+        std::vector<float> in (static_cast<std::size_t> (fs * 0.2), 0.0f);
+        in[0] = 1.0f;
+        const auto out = render (*m, in);
+        const auto half = static_cast<std::size_t> (0.01 * fs);
+        double sum = 0.0;
+        for (double t : { 0.02, 0.04, 0.06, 0.08 })
+            sum += echoDensity (out.l, static_cast<std::size_t> (t * fs), half);
+        return sum / 4.0;
+    };
+    const double nebula = early (MachineId::nebula), arena = early (MachineId::arena);
+    INFO ("early echo density: Nebula " << nebula << ", Arena " << arena);
+    CHECK (nebula > 0.55);
+    CHECK (nebula > arena + 0.25);
 }
 
 TEST_CASE ("Rise swells the dry signal in wet-and-dry mode")
@@ -361,14 +418,23 @@ TEST_CASE ("Switching machines never clips or produces NaN, with and without spi
     CHECK (sawSpill);
 }
 
-TEST_CASE ("Moving the size knob doesn't click")
+TEST_CASE ("Moving knobs that change delay lengths doesn't click or zip")
 {
-    // A 220 Hz sine through the engine while the first knob jumps between extremes.
-    // Delay lengths may glide (a small pitch bend) but must never jump; a jump shows up
-    // as a burst of energy far above the sine, so the 4th-order highpassed output must
-    // stay quiet.
-    const int machine = GENERATE (0, 11); // Chamber, Space Map
-    CAPTURE (kNames[machine]);
+    // A 220 Hz sine through the engine while a knob jumps between extremes. Delay
+    // lengths and Aurora's modes may glide (a pitch bend) but must never jump or sweep
+    // fast; either shows up as a burst of energy far above the sine, so the output
+    // above 5 kHz (an 8th-order highpass) must stay quiet.
+    enum Knob { first, second, decay };
+    struct Case { int machine; Knob knob; };
+    const auto c = GENERATE (Case { 0, first },    // Chamber size
+                             Case { 11, first },   // Space Map size
+                             Case { 1, decay },    // Arena decay
+                             Case { 7, first },    // Aurora pitch
+                             Case { 7, decay },    // Aurora decay
+                             Case { 9, second },   // Nebula softness
+                             Case { 10, first });  // Clear Night size
+    const int machine = c.machine;
+    CAPTURE (kNames[machine], static_cast<int> (c.knob));
     const double fs = 48000.0;
     constexpr int B = 64;
     ReverbEngine e;
@@ -381,27 +447,34 @@ TEST_CASE ("Moving the size knob doesn't click")
     ep.preDelayMs = 20.0f;
     e.setParams (ep);
     e.prepare (fs, B);
-    float L[B], R[B], x1 = 0, h0 = 0, h1 = 0, h2 = 0, worst = 0;
+    float L[B], R[B], worst = 0;
+    std::array<Biquad, 4> hp;
+    for (auto& f : hp)
+        f.setHighpass (5000.0f, fs);
     double ph = 0, acc = 0;
     int count = 0;
     for (int i = 0; i < static_cast<int> (fs * 4); i += B)
     {
         if (i >= static_cast<int> (fs) && (i / B) % 750 == 0)
-            ep.machineParams.param1 = ((i / B) / 750) % 2 ? 0.9f : 0.1f;
+        {
+            const bool high = ((i / B) / 750) % 2;
+            if (c.knob == decay)       ep.machineParams.decaySeconds = high ? 10.0f : 0.5f;
+            else if (c.knob == first)  ep.machineParams.param1 = high ? 0.9f : 0.1f;
+            else                       ep.machineParams.param2 = high ? 0.9f : 0.1f;
+        }
         e.setParams (ep);
         for (int k = 0; k < B; ++k)
         {
-            L[k] = R[k] = 0.3f * static_cast<float> (std::sin (ph));
+            L[k] = R[k] = 0.1f * static_cast<float> (std::sin (ph)); // low enough that the output limiter never acts
             ph += 2.0 * 3.14159265358979 * 220.0 / fs;
         }
         e.process (L, R, B);
         for (int k = 0; k < B; ++k)
         {
-            const float y = L[k] - x1; x1 = L[k];
-            const float z = y - h0; h0 = y;
-            const float w = z - h1; h1 = z;
-            const float q = w - h2; h2 = w;
-            acc += q * q;
+            float q = L[k];
+            for (auto& f : hp)
+                q = f.process (q);
+            acc += static_cast<double> (q) * q;
             if (++count == 480)
             {
                 if (i > fs / 2) worst = std::max (worst, static_cast<float> (std::sqrt (acc / 480.0)));
@@ -410,5 +483,5 @@ TEST_CASE ("Moving the size knob doesn't click")
             }
         }
     }
-    CHECK (20.0f * std::log10 (worst + 1.0e-12f) < -60.0f);
+    CHECK (20.0f * std::log10 (worst + 1.0e-12f) < -70.0f); // -60 dB at the earlier 3x louder test tone
 }

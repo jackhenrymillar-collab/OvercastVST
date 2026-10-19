@@ -17,12 +17,14 @@ public:
         fs = sampleRate;
         core.prepare (fs);
         for (auto* l : { &loopL, &loopR })
-            l->prepare (static_cast<std::size_t> (msToSamples (340.0f, fs)) + 8);
+            l->prepare (static_cast<std::size_t> (msToSamples (345.0f, fs)) + 8);
         diffL.prepare (fs, { 7.1f, 11.3f, 17.9f, 23.1f });
         diffR.prepare (fs, { 7.9f, 10.7f, 18.7f, 22.3f });
         length.prepare (fs, 120.0f);
         feedback.prepare (fs, 30.0f);
         inputGain.prepare (fs, 50.0f);
+        wobbleL.prepare (fs); wobbleR.prepare (fs);
+        wobbleL.setFrequency (0.23f); wobbleR.setFrequency (0.31f); wobbleR.setPhase (0.4f);
         setParams (params);
         reset();
     }
@@ -49,8 +51,11 @@ public:
         for (int i = 0; i < n; ++i)
         {
             const float len = length.next(), fb = feedback.next(), in = inputGain.next();
-            const float backL = loopL.readFractional (len);
-            const float backR = loopR.readFractional (len * 1.07f);
+            // The loop length drifts by up to 1.5 ms so its repeats never settle into a
+            // fixed comb: with a fixed length the high-feedback settings rang at one pitch.
+            const float drift = msToSamples (1.5f, fs);
+            const float backL = loopL.readFractional (len + drift * (1.0f + wobbleL.next()));
+            const float backR = loopR.readFractional (len * 1.07f + drift * (1.0f + wobbleR.next()));
             const float l = diffL.process (in * inL[i] + fb * dampL.process (backR, damp), 0.65f);
             const float r = diffR.process (in * inR[i] + fb * dampR.process (backL, damp), 0.65f);
             loopL.push (l);
@@ -66,6 +71,7 @@ private:
     Diffuser<4> diffL, diffR;
     OnePoleLowpass dampL, dampR;
     Smoother length, feedback, inputGain;
+    Lfo wobbleL, wobbleR;
     MachineParams params;
 };
 

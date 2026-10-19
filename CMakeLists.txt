@@ -149,7 +149,8 @@ if(OVERCAST_BUILD_TESTS)
         tests/DspTests.cpp
         tests/PlateTests.cpp
         tests/EngineTests.cpp
-        tests/MachineTests.cpp)
+        tests/MachineTests.cpp
+        tests/MemoryTests.cpp)
     target_link_libraries(overcast_tests PRIVATE overcast_dsp Catch2::Catch2WithMain)
 
     enable_testing()

@@ -2,7 +2,10 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "MachineMemory.h"
+
 #include <atomic>
+#include <functional>
 #include <map>
 
 namespace overcast
@@ -46,6 +49,12 @@ public:
     // Session save and restore: remembers which preset was loaded.
     void writeToState (juce::ValueTree& stateCopy) const;
     void readFromState (const juce::ValueTree& restored);
+
+    // The knob settings of the factory preset for a machine, in MachineMemory order.
+    std::optional<MachineMemory::Knobs> getFactoryKnobs (int machine) const;
+
+    // Called around every preset load and A/B switch, which set all the knobs at once.
+    std::function<void()> onBeforeApply, onAfterApply;
 
     // Bumped whenever the preset list, the current preset or the A/B slot changes.
     int getChangeCount() const noexcept { return changeCount.load(); }

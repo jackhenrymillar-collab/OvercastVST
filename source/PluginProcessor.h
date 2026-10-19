@@ -1,5 +1,6 @@
 #pragma once
 
+#include "MachineMemory.h"
 #include "Parameters.h"
 #include "PresetManager.h"
 #include "dsp/ReverbEngine.h"
@@ -9,10 +10,13 @@
 namespace overcast
 {
 
-class OvercastProcessor final : public juce::AudioProcessor
+class OvercastProcessor final : public juce::AudioProcessor,
+                                private juce::AudioProcessorValueTreeState::Listener,
+                                private juce::AsyncUpdater
 {
 public:
     OvercastProcessor();
+    ~OvercastProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -50,10 +54,27 @@ public:
 private:
     dsp::EngineParams readParams() const noexcept;
 
+    // Per-machine knob memory (see MachineMemory.h). Machine changes are handled on
+    // the message thread; preset loads and session restores set the memory directly.
+    void parameterChanged (const juce::String& id, float) override;
+    void handleAsyncUpdate() override;
+    void beginBulkChange();
+    void endBulkChange();
+    int currentMachine() const noexcept;
+    MachineMemory::Knobs readKnobs() const noexcept;
+    void applyKnobs (const MachineMemory::Knobs&);
+    void writeMemory (juce::ValueTree&) const;
+    void readMemory (const juce::ValueTree&);
+
     juce::AudioProcessorValueTreeState state;
     PresetManager presets { state };
     std::atomic<float> uiScale { 1.0f };
     dsp::ReverbEngine engine;
+
+    MachineMemory memory { static_cast<std::size_t> (machineNames().size()) };
+    mutable juce::CriticalSection memoryLock;
+    std::atomic<bool> holdMemory { false };
+    std::array<std::atomic<float>*, MachineMemory::kNumKnobs> knobs {};
 
     // Cached raw parameter pointers: lock-free reads on the audio thread.
     std::atomic<float>* machine = nullptr;

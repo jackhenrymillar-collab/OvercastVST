@@ -38,7 +38,7 @@ public:
         d.rtHigh = p.decaySeconds * 0.6f;
         d.highHz = 3500.0f;
         fdn.setDecay (d);
-        fdn.setModulation (0.3f + 0.7f * p.mod);
+        fdn.setModulation (0.3f + 0.7f * p.mod, 1.0f); // the drifting pitch is part of Haze's sound
         fdn.setFreeze (p.freeze);
         diffusion.setTarget (0.5f + 0.25f * std::clamp (p.param1, 0.0f, 1.0f));
         smear.setTarget (2.5f * std::clamp (p.param2, 0.0f, 1.0f));
