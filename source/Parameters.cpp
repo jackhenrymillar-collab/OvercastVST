@@ -6,7 +6,7 @@ namespace overcast
 juce::StringArray machineNames()
 {
     return { "Chamber", "Arena", "Sheet", "Coil", "Rise", "Blossom",
-             "Haze", "Choir", "Halo", "Tape Echo", "Gate", "Space Map" };
+             "Haze", "Aurora", "Halo", "Nebula", "Clear Night", "Space Map" };
 }
 
 namespace
