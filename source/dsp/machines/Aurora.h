@@ -18,6 +18,12 @@ namespace overcast::dsp
 // param2 = harmony (0 = natural, randomly spread modes; 1 = modes drawn onto the
 // harmonics of A, so the tail rings as a chord).
 // Mod makes every mode drift slightly in pitch, so the tail shimmers and beats.
+//
+// Long decays: a mode that holds perfectly still rings as its own pitch, and past a few
+// seconds of decay the natural (Harmony 0) tail turned into a cloud of separate tones.
+// From 3 s to 8 s of decay (and when frozen) every mode keeps a small drift of about
+// 2 cents even with Mod at zero, and all drifts run up to four times faster, which is
+// enough to blend neighbouring modes into a smooth tail.
 class Aurora final : public ReverbMachine
 {
 public:
@@ -25,7 +31,7 @@ public:
 
     Aurora()
     {
-        for (auto* v : { &re, &im, &ar, &ai, &dar, &dai, &tar, &tai, &bL, &bR, &cL, &cR, &baseHz, &harmonicHz, &rate, &drift })
+        for (auto* v : { &re, &im, &ar, &ai, &dar, &dai, &tar, &tai, &bL, &bR, &cL, &cR, &baseHz, &harmonicHz, &rate, &drift, &phase })
             v->assign (kModes, 0.0f);
         layoutModes();
     }
@@ -42,7 +48,6 @@ public:
         harmony.prepare (fs, 250.0f);
         modAmount.prepare (fs, 100.0f);
         inputGain.prepare (fs, 50.0f);
-        clock = 0.0f;
         setParams (params);
         reset();
     }
@@ -51,6 +56,7 @@ public:
     {
         std::fill (re.begin(), re.end(), 0.0f);
         std::fill (im.begin(), im.end(), 0.0f);
+        phase = drift;
         diffL.reset(); diffR.reset();
         pitch.snapTo (pitch.getTarget());
         harmony.snapTo (harmony.getTarget());
@@ -189,6 +195,7 @@ private:
             harmonicHz[k] = n * kRootHz * (1.0f + 0.0025f * (next() - 0.5f)); // slightly detuned partials beat gently
             rate[k] = 0.01f * std::round (5.0f + 35.0f * next()); // 0.05 to 0.4 Hz
             drift[k] = next();
+            phase[k] = drift[k];
             bL[k] = (k % 2 == 0) ? (next() < 0.5f ? -1.0f : 1.0f) : 0.0f;
             bR[k] = (k % 2 == 1) ? (next() < 0.5f ? -1.0f : 1.0f) : 0.0f;
             cL[k] = next() < 0.5f ? -1.0f : 1.0f;
@@ -222,14 +229,19 @@ private:
     {
         const float ratio = pitch.getCurrent();
         const float h = harmony.getCurrent();
-        const float depth = 0.004f * modAmount.getCurrent();
+        const float t = params.freeze ? 1.0f : std::clamp ((rtMid - kTailStart) / (kTailFull - kTailStart), 0.0f, 1.0f);
+        const float tail = t * t * (3.0f - 2.0f * t);
+        const float depth = 0.004f * std::max (modAmount.getCurrent(), kTailDrift * tail);
+        const float rateScale = 1.0f + 3.0f * tail;
         const float nyquistGuard = 0.45f * static_cast<float> (fs);
-        const float step = static_cast<float> (kUpdate) / static_cast<float> (fs);
-        clock += step; // seconds; every drift rate is a multiple of 0.01 Hz, so wrapping
-        if (clock >= 100.0f) clock -= 100.0f; // at 100 s is seamless
+        // Each mode's drift phase moves on by its rate times the speed-up, so changing the
+        // speed never makes the drift jump.
+        const float step = rateScale * static_cast<float> (kUpdate) / static_cast<float> (fs);
         for (std::size_t k = 0; k < kModes; ++k)
         {
-            const float wobble = 1.0f + depth * std::sin (6.28318531f * (rate[k] * clock + drift[k]));
+            phase[k] += rate[k] * step;
+            if (phase[k] >= 1.0f) phase[k] -= 1.0f;
+            const float wobble = 1.0f + depth * std::sin (6.28318531f * phase[k]);
             const float hz = ratio * (baseHz[k] + h * (harmonicHz[k] - baseHz[k])) * wobble;
             // A mode pushed above the audio band (by the Pitch knob, or a low sample rate)
             // is held at the band edge and dies away within a few milliseconds; cutting it
@@ -256,6 +268,8 @@ private:
         }
     }
 
+    static constexpr float kTailStart = 3.0f, kTailFull = 8.0f; // seconds of decay
+    static constexpr float kTailDrift = 0.3f;                    // as a share of full Mod
     static constexpr float kRootHz = 55.0f; // A1: the harmony knob pulls modes onto its harmonics
     // Not truly endless: a pole radius any closer to 1 is lost in float rounding and the
     // tail can creep louder. 300 s fades only about 1 dB in five seconds.
@@ -266,8 +280,7 @@ private:
 
     double fs = 48000.0;
     std::array<float, kUpdate * kLanes> accL {}, accR {};
-    std::vector<float> re, im, ar, ai, dar, dai, tar, tai, bL, bR, cL, cR, baseHz, harmonicHz, rate, drift;
-    float clock = 0.0f;
+    std::vector<float> re, im, ar, ai, dar, dai, tar, tai, bL, bR, cL, cR, baseHz, harmonicHz, rate, drift, phase;
     Diffuser<4> diffL, diffR;
     Smoother pitch, harmony, modAmount, inputGain;
     float rtLow = 3.3f, rtMid = 3.0f, rtHigh = 1.35f;

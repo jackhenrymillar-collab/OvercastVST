@@ -532,16 +532,19 @@ static double ringingPitches (const std::vector<float>& x, double fs, double sta
 }
 
 // Long decays used to ring at separate pitches below 1 kHz, right where piano notes
-// sit (Chamber and Space Map measured 5 to 10 at 9 s, with Mod at 30% or off). The
-// network's mixing matrix now turns faster as the decay grows, which keeps the tail
-// smooth at every Mod setting.
+// sit (Chamber and Space Map measured 5 to 10 at 9 s, with Mod at 30% or off; Coil 14).
+// The networks' mixing matrices now turn faster as the decay grows, Sheet's tank halves
+// and Coil's springs are mixed by turning rotations, and Aurora's modes keep drifting,
+// which keeps the tail smooth at every Mod setting. Aurora is measured at Harmony 0:
+// with Harmony up it rings as a chord on purpose.
 TEST_CASE ("Long tails don't ring at separate pitches")
 {
     const auto id = GENERATE (static_cast<int> (MachineId::chamber), static_cast<int> (MachineId::arena),
                               static_cast<int> (MachineId::rise), static_cast<int> (MachineId::blossom),
                               static_cast<int> (MachineId::haze), static_cast<int> (MachineId::halo),
                               static_cast<int> (MachineId::nebula), static_cast<int> (MachineId::clearNight),
-                              static_cast<int> (MachineId::spaceMap));
+                              static_cast<int> (MachineId::spaceMap), static_cast<int> (MachineId::sheet),
+                              static_cast<int> (MachineId::coil), static_cast<int> (MachineId::aurora));
     const float mod = GENERATE (0.0f, 0.3f);
 
     const double fs = 16000.0;
@@ -549,7 +552,7 @@ TEST_CASE ("Long tails don't ring at separate pitches")
     p.decaySeconds = 12.0f;
     p.mod = mod;
     p.param1 = 0.5f;
-    p.param2 = 0.5f;
+    p.param2 = id == static_cast<int> (MachineId::aurora) ? 0.0f : 0.5f;
     auto m = make (id, fs, p);
     std::vector<float> in (static_cast<std::size_t> (fs * 5.5), 0.0f);
     in[0] = 1.0f;
