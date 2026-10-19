@@ -5,6 +5,7 @@ A multi-machine stereo reverb plugin for macOS (VST3 and AU), built with JUCE 8.
 **Status: Phases 1 to 4.** All 12 machines are implemented, level-matched and tested.
 Switching machines crossfades, and with Spillover on the old tail rings out naturally.
 The night sky panel is in: twinkling stars, rare shooting stars and rolling clouds,
+a sky of its own for each machine, and a moon that doubles as the bypass switch,
 with factory and user presets and A/B compare.
 
 ## The panel
@@ -20,9 +21,21 @@ with factory and user presets and A/B compare.
   A `*` after the name means you've changed it since loading. Hosts also see the
   12 factory presets as programs.
 - **A / B:** the first click copies A into B. Tweak B, then click to flip between them.
+- **Sky:** each machine has its own sky (Chamber's lantern light, Arena's Milky Way,
+  Sheet's frost, Coil's rain, Rise's sunrise, Blossom's rising lights, Haze's mist,
+  Aurora's northern lights, Halo's moon halo, Nebula, Clear Night's cloudless sky and
+  Space Map's dense stars). Switching machine fades between them over 3 seconds while
+  the moon glides to that machine's phase, waxing from a thin crescent on Chamber to
+  full on Halo and waning after it. Tone tints the moon: warm cream at centre, white
+  at the top, a blood moon at the bottom. Halo's Shimmer adds stars and, near the top,
+  glitter; Blossom's Feedback adds lights and rising motes. Freeze stops the twinkling.
+- **Bypass:** click the moon. It goes to a new moon, the sky turns black with only
+  stars, and the controls dim. Click again to turn Overcast back on. Hosts see the
+  same switch as the plugin's bypass, and it fades over 20 ms so it never clicks.
 - **Size:** drag the bottom-right corner (70% to 150%). The size is saved with the session.
 - **Motion:** the sky animates at 30 fps only while the window is open, and stops
-  when macOS Reduce Motion is on (System Settings › Accessibility › Display).
+  when macOS Reduce Motion is on (System Settings › Accessibility › Display). With
+  Reduce Motion on, sky changes are instant instead of fading.
 
 The fonts are Cormorant Garamond and Jost, embedded from `resources/fonts` under the
 SIL Open Font License.

@@ -29,6 +29,7 @@ public:
 
 private:
     class PresetName;
+    class MoonButton;
 
     void setMachine (int index);
     void showPresetMenu();
@@ -60,6 +61,13 @@ private:
     ui::TextToggle mixLaw { "Mix law", "Equal", "Pedal" };
 
     ui::SaveOverlay saveOverlay;
+
+    // The moon is the bypass switch.
+    std::unique_ptr<MoonButton> moonButton;
+    std::unique_ptr<juce::ParameterAttachment> bypassAttachment;
+    bool bypassed = false;
+    ui::NightSky::Inputs lastInputs;
+    void setBypassed (bool);
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
