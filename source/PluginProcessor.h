@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Parameters.h"
+#include "PresetManager.h"
 #include "dsp/ReverbEngine.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -29,21 +30,29 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 60.0; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return {}; }
+    // Hosts see the factory presets as programs.
+    int getNumPrograms() override;
+    int getCurrentProgram() override;
+    void setCurrentProgram (int) override;
+    const juce::String getProgramName (int) override;
     void changeProgramName (int, const juce::String&) override {}
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& getState() noexcept { return state; }
+    PresetManager& getPresets() noexcept { return presets; }
+
+    // The panel's size, remembered with the session.
+    float getUiScale() const noexcept { return uiScale.load(); }
+    void setUiScale (float s) noexcept { uiScale = s; }
 
 private:
     dsp::EngineParams readParams() const noexcept;
 
     juce::AudioProcessorValueTreeState state;
+    PresetManager presets { state };
+    std::atomic<float> uiScale { 1.0f };
     dsp::ReverbEngine engine;
 
     // Cached raw parameter pointers: lock-free reads on the audio thread.
