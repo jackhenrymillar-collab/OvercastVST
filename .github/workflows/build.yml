@@ -1,0 +1,51 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  macos:
+    name: macOS (VST3 + AU, universal)
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j 4
+
+      - name: DSP tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Check universal binary
+        run: lipo -info "build/Overcast_artefacts/Release/VST3/Overcast.vst3/Contents/MacOS/Overcast"
+
+      - name: Validate AU with auval
+        run: |
+          killall -9 AudioComponentRegistrar || true
+          auval -v aufx Ovc1 Ovca
+
+      - name: Validate VST3 and AU with pluginval
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          PV=pluginval.app/Contents/MacOS/pluginval
+          $PV --strictness-level 10 --skip-gui-tests --validate-in-process "build/Overcast_artefacts/Release/VST3/Overcast.vst3"
+          $PV --strictness-level 10 --skip-gui-tests --validate-in-process "$HOME/Library/Audio/Plug-Ins/Components/Overcast.component"
+
+  linux-tests:
+    name: Linux (DSP tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DOVERCAST_BUILD_PLUGIN=OFF -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j 4
+      - name: DSP tests
+        run: ctest --test-dir build --output-on-failure
