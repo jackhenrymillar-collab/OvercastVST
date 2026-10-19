@@ -18,14 +18,14 @@ namespace
         { "Rise",      "Reverb that swells in behind every note",               "Rise time",  "Swell mode" },
         { "Blossom",   "A tail that slowly grows denser after the attack",      "Length",     "Feedback" },
         { "Haze",      "A huge, diffuse ambient wash with no clear echoes",     "Diffusion",  "Smear" },
-        { "Choir",     "Reverb shaped by formant filters that sound like voices", "Vowel",    "Formant mix" },
+        { "Aurora",    "Thousands of tuned resonators that ring and drift like a glass sky", "Pitch", "Harmony" },
         { "Halo",      "Octave-up shimmer from pitch-shifted feedback",         "Interval",   "Shimmer" },
-        { "Tape Echo", "Multi-head tape echo feeding a reverb",                 "Heads",      "Feedback" },
-        { "Gate",      "Gated, reverse and swelling envelopes",                 "Shape",      "Diffusion" },
+        { "Nebula",    "A velvet-noise wash that is fully dense from the first moment", "Darkness", "Softness" },
+        { "Clear Night", "A colourless, evenly tuned hall with no ringing notes", "Size",     "Brightness" },
         { "Space Map", "Early reflections that place a sound in a room",        "Room shape", "Distance" },
     } };
 
-    enum Machine { chamber, arena, sheet, coil, rise, blossom, haze, choir, halo, tapeEcho, gate, spaceMap };
+    enum Machine { chamber, arena, sheet, coil, rise, blossom, haze, aurora, halo, nebula, clearNight, spaceMap };
 
     float unit (float percent) { return std::clamp (percent * 0.01f, 0.0f, 1.0f); }
 
@@ -44,22 +44,12 @@ const MachineInfo& machineInfo (int index)
 
 int numMachines() noexcept { return static_cast<int> (kMachines.size()); }
 
-juce::String decayLabel (int machine)    { return machine == gate ? "Gate time" : "Decay"; }
-juce::String preDelayLabel (int machine) { return machine == tapeEcho ? "Echo time" : "Pre-delay"; }
+juce::String decayLabel (int)    { return "Decay"; }
+juce::String preDelayLabel (int) { return "Pre-delay"; }
 
-juce::String formatDecay (int machine, float seconds)
-{
-    if (machine == gate)
-        return formatSeconds (std::clamp (seconds, 0.08f, 1.5f)); // Gate.h clamps its gate time
-    return formatSeconds (seconds);
-}
+juce::String formatDecay (int, float seconds) { return formatSeconds (seconds); }
 
-juce::String formatPreDelay (int machine, float ms)
-{
-    if (machine == tapeEcho)
-        ms = std::clamp (ms, 40.0f, 800.0f); // TapeEcho.h clamps the head spacing
-    return juce::String (juce::roundToInt (ms)) + " ms";
-}
+juce::String formatPreDelay (int, float ms) { return juce::String (juce::roundToInt (ms)) + " ms"; }
 
 juce::String formatPercent (float percent) { return juce::String (juce::roundToInt (percent)) + "%"; }
 
@@ -86,35 +76,17 @@ juce::String formatParam1 (int machine, float percent)
         case coil:  return juce::String (1 + static_cast<int> (p * 2.999f));
         case rise:  return formatSeconds (0.05f * std::pow (60.0f, p));
         case blossom: return juce::String (juce::roundToInt (40.0f + 260.0f * p)) + " ms";
-        case choir:
+        case aurora:
         {
-            static const char* vowels[] = { "A", "E", "I", "O", "U" };
-            const float v = p * 4.0f;
-            const int lo = static_cast<int> (std::floor (v));
-            const float frac = v - static_cast<float> (lo);
-            if (frac < 0.2f || lo >= 4) return vowels[std::min (lo, 4)];
-            if (frac > 0.8f) return vowels[lo + 1];
-            return juce::String (vowels[lo]) + " / " + vowels[lo + 1];
+            const int st = juce::roundToInt ((p - 0.5f) * 24.0f);
+            return (st > 0 ? "+" : "") + juce::String (st) + " st";
         }
         case halo:
         {
             static const char* intervals[] = { "-12 st", "+5 st", "+7 st", "+12 st", "+19 st" };
             return intervals[std::min (static_cast<int> (p * 5.0f), 4)];
         }
-        case tapeEcho:
-        {
-            static const char* patterns[] = { "1", "2", "3", "1 + 2", "2 + 3", "1 + 3", "1 + 2 + 3" };
-            return patterns[std::min (static_cast<int> (p * 7.0f), 6)];
-        }
-        case gate:
-        {
-            const float s = p * 2.0f;
-            if (s < 0.25f) return "Gate";
-            if (s < 0.75f) return "Gate / Rev";
-            if (s < 1.25f) return "Reverse";
-            if (s < 1.75f) return "Rev / Swell";
-            return "Swell";
-        }
+        case clearNight: return juce::String (0.6f + p, 2) + juce::String::fromUTF8 (" \xc3\x97");
         default: return formatPercent (percent);
     }
 }

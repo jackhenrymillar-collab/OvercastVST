@@ -110,13 +110,13 @@ CI also runs `auval` and `pluginval` (strictness 10, including its editor tests)
 | Rise | Auto-swell | Rise time (50 ms to 3 s) | Mode: reverb only / reverb and dry |
 | Blossom | Tail that grows after the attack | Bloom length | Bloom feedback |
 | Haze | Huge ambient wash | Diffusion | Smear |
-| Choir | Hall with vocal formants | Vowel (A, E, I, O, U) | Formant mix |
+| Aurora | Modal reverb: 2048 tuned resonators | Pitch (-12 to +12 semitones) | Harmony (natural to harmonic) |
 | Halo | Shimmer | Interval (-12, +5, +7, +12, +19) | Shimmer amount |
-| Tape Echo | Three-head tape echo into a hall | Head pattern (7 combinations) | Feedback |
-| Gate | Gated, reverse and swell envelopes | Shape (gate to reverse to swell) | Diffusion |
+| Nebula | Velvet-noise network, dense from the first moment | Darkness | Softness (quick wash to slow bloom) |
+| Clear Night | Colourless hall with optimised delay tuning | Size (0.6x to 1.6x) | Brightness |
 | Space Map | Modelled room reflections | Room shape (small room to long hall) | Listener distance |
 
 Notes:
-- **Tape Echo** uses the Pre-delay knob as its echo time (40 to 800 ms) instead of a pre-delay.
-- **Gate** uses the Decay knob as its gate time (80 ms to 1.5 s).
+- Machines built on a feedback network (all but Sheet, Coil and Aurora) slowly rotate their feedback matrix, so the Mod knob smooths the tail without detuning it much.
+- Each machine remembers its own knob settings. Switching machines and back restores what you had.
 - **Coil** limits Decay to 0.3 to 12 s, like a real spring tank.

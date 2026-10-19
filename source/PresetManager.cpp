@@ -26,10 +26,10 @@ namespace
         { "Dawn Rise",         4,  4.5f,  10.0f, 50.0f,  -5.0f, 50.0f,  55.0f, 20.0f,  80.0f, 10000.0f },
         { "Night Blossom",     5,  6.0f,  25.0f, 40.0f,   0.0f, 50.0f,  60.0f, 55.0f,  80.0f, 11000.0f },
         { "Midnight Haze",     6, 14.0f,  40.0f, 45.0f, -20.0f, 70.0f,  80.0f, 55.0f, 120.0f,  8000.0f },
-        { "Midnight Choir",    7,  6.2f,  42.0f, 38.0f, -12.0f, 55.0f,  70.0f, 35.0f,  80.0f,  9500.0f },
+        { "Aurora Glass",      7,  8.0f,  30.0f, 40.0f,  -5.0f, 45.0f,  50.0f, 30.0f,  80.0f, 11000.0f },
         { "Starlight Halo",    8,  9.0f,  30.0f, 40.0f,   5.0f, 45.0f,  70.0f, 50.0f, 150.0f, 12000.0f },
-        { "Tape Comet",        9,  2.5f, 380.0f, 35.0f, -15.0f, 40.0f, 100.0f, 45.0f, 100.0f,  6000.0f },
-        { "Eclipse Gate",     10,  0.45f,  0.0f, 40.0f,  10.0f, 10.0f,   0.0f, 60.0f,  80.0f, 14000.0f },
+        { "Night Nebula",      9, 10.0f,  20.0f, 45.0f, -10.0f, 40.0f,  50.0f, 60.0f, 100.0f,  9000.0f },
+        { "Clear Night Hall", 10,  3.5f,  15.0f, 35.0f,   0.0f, 30.0f,  55.0f, 55.0f,  60.0f, 14000.0f },
         { "Observatory",      11,  1.8f,   0.0f, 30.0f,   0.0f, 20.0f,  60.0f, 40.0f,  40.0f, 15000.0f },
     };
 }
@@ -96,8 +96,18 @@ PresetManager::Values PresetManager::captureValues() const
     return v;
 }
 
+std::optional<MachineMemory::Knobs> PresetManager::getFactoryKnobs (int machine) const
+{
+    for (const auto& f : kFactory)
+        if (f.machine == machine)
+            return MachineMemory::Knobs { f.decay, f.preDelay, f.mix, f.tone, f.mod, f.param1, f.param2 };
+    return std::nullopt;
+}
+
 void PresetManager::applyValues (const Values& values)
 {
+    if (onBeforeApply)
+        onBeforeApply();
     for (auto* param : state.processor.getParameters())
     {
         auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param);
@@ -112,6 +122,9 @@ void PresetManager::applyValues (const Values& values)
         ranged->setValueNotifyingHost (normalised);
         ranged->endChangeGesture();
     }
+
+    if (onAfterApply)
+        onAfterApply();
 }
 
 bool PresetManager::isModified() const

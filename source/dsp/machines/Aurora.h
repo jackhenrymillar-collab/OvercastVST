@@ -112,8 +112,8 @@ private:
             xl[i] = diffL.process (inL[i] * g, 0.6f);
             xr[i] = diffR.process (inR[i] * g, 0.6f);
         }
-        std::fill (accL.begin(), accL.begin() + static_cast<std::ptrdiff_t> (len * W), 0.0f);
-        std::fill (accR.begin(), accR.begin() + static_cast<std::ptrdiff_t> (len * W), 0.0f);
+        std::fill (accL.begin(), accL.begin() + static_cast<std::ptrdiff_t> (static_cast<std::size_t> (len) * W), 0.0f);
+        std::fill (accR.begin(), accR.begin() + static_cast<std::ptrdiff_t> (static_cast<std::size_t> (len) * W), 0.0f);
         float* __restrict const aL = accL.data();
         float* __restrict const aR = accR.data();
 

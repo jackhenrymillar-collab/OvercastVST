@@ -217,8 +217,8 @@ TEST_CASE ("Machines are loudness matched")
 // A tail that rings at fixed pitches sounds metallic. That shows up in the impulse
 // response as echoes that repeat at a fixed spacing, so the strongest repeat (the
 // autocorrelation peak) has to stay small. Sheet and Haze measure 0.12 to 0.15;
-// Chamber, Space Map and Gate used to measure 0.3 to 0.45. Coil (spring drip) and
-// Tape Echo repeat on purpose and are left out.
+// Chamber and Space Map used to measure 0.3 to 0.45. Coil (spring drip) repeats on
+// purpose and is left out.
 TEST_CASE ("Tails don't ring with repeating echoes")
 {
     struct Setting { int id; float param1; float decay; float param2 = 0.5f; };
