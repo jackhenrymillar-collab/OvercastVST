@@ -3,7 +3,8 @@
 //   OvercastSnapshot <out-dir> [preset-number] [seconds] [fps] [scale] [param=value ...]
 //
 // Any param=value arguments set parameters after the preset loads, in their own
-// units (for example machine=8 bypass=1 tone=-100).
+// units (for example machine=8 bypass=1 tone=-100). With BENCH=1 in the
+// environment it skips writing files and prints the average time per frame.
 //
 // With seconds = 0 it writes one still (panel.png). Otherwise it writes numbered
 // frames (frame-0000.png, ...) covering that many seconds of animation.
@@ -11,6 +12,9 @@
 #include "PluginEditor.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
+
+#include <cstdio>
+#include <cstdlib>
 
 int main (int argc, char* argv[])
 {
