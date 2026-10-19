@@ -8,8 +8,12 @@ namespace overcast::dsp
 
 // Space Map: places the sound in a modelled shoebox room using the image-source method
 // (Allen and Berkley, 1979): every first- and second-order wall reflection is computed
-// for each ear, then a light FDN adds the diffuse tail. Moving the controls glides the
+// for each ear, then a 16-line FDN adds the diffuse tail. Moving the controls glides the
 // reflections smoothly to their new positions.
+//
+// The tail is driven by the diffused input rather than by the discrete reflections:
+// a handful of strong echoes is a comb filter, and feeding it into the tail made the
+// whole decay ring at the comb's pitches.
 // param1 = room shape (small room to long hall), param2 = listener distance from the source.
 class SpaceMap final : public ReverbMachine
 {
@@ -21,7 +25,9 @@ public:
         fs = sampleRate;
         earL.prepare (fs, 260.0f);
         earR.prepare (fs, 260.0f);
-        fdn.prepare (fs, 40.0f * 1.6f);
+        diffL.prepare (fs, { 2.9f, 4.3f, 6.1f, 8.3f });
+        diffR.prepare (fs, { 3.3f, 4.7f, 5.7f, 8.9f });
+        fdn.prepare (fs, kLate.back() * kMaxLateScale);
         lastShape = lastPos = -1.0f;
         setParams (params);
         reset();
@@ -30,7 +36,7 @@ public:
     void reset() override
     {
         earL.reset(); earR.reset(); earL.snap(); earR.snap();
-        fdn.reset(); airL.reset(); airR.reset();
+        fdn.reset(); airL.reset(); airR.reset(); diffL.reset(); diffR.reset();
     }
 
     void setParams (const MachineParams& p) override
@@ -54,12 +60,16 @@ public:
             computeEar (earR, L, W, H, sx, sy, sz, lx, ly - 0.09f, lz);
         }
 
-        // Diffuse tail sized to the room.
-        const float size = std::cbrt (L * W * H) / 6.0f;
-        std::array<float, 8> ms {};
-        for (std::size_t i = 0; i < 8; ++i)
-            ms[i] = std::clamp (kLate[i] * size, 3.0f, 40.0f * 1.6f);
+        // Diffuse tail sized to the room, but not so short that it rings.
+        const float size = std::clamp (std::cbrt (L * W * H) / 6.0f, 0.75f, kMaxLateScale);
+        std::array<float, 16> ms {}, ap {};
+        for (std::size_t i = 0; i < 16; ++i)
+        {
+            ms[i] = kLate[i] * size;
+            ap[i] = kLoopAllpass[i] * size;
+        }
         fdn.setDelays (ms);
+        fdn.setLoopAllpasses (ap, 0.55f);
         DecaySettings d;
         d.rtMid = p.decaySeconds;
         d.rtLow = p.decaySeconds * 1.1f;
@@ -78,7 +88,7 @@ public:
             const float el = airL.process (earL.process (mono), air);
             const float er = airR.process (earR.process (mono), air);
             float tl, tr;
-            fdn.process (el, er, tl, tr);
+            fdn.process (diffL.process (mono, 0.65f), diffR.process (mono, 0.65f), tl, tr);
             wetL[i] = el + 0.55f * tl;
             wetR[i] = er + 0.55f * tr;
         }
@@ -110,12 +120,17 @@ private:
         ear.setNumTaps (tap);
     }
 
-    static constexpr std::array<float, 8> kLate { 13.1f, 17.3f, 19.9f, 23.7f, 27.1f, 31.3f, 35.9f, 39.7f };
+    static constexpr float kMaxLateScale = 1.6f;
+    static constexpr std::array<float, 16> kLate { 13.1f, 14.9f, 17.3f, 18.7f, 19.9f, 21.7f, 23.7f, 25.3f,
+                                                   27.1f, 29.3f, 31.3f, 33.1f, 35.9f, 37.3f, 39.7f, 41.9f };
+    static constexpr std::array<float, 16> kLoopAllpass { 1.13f, 1.71f, 2.37f, 2.93f, 1.39f, 2.11f, 2.69f, 3.31f,
+                                                          1.27f, 1.93f, 2.53f, 3.13f, 1.51f, 2.23f, 2.83f, 3.47f };
 
     double fs = 48000.0;
     TapDelay<kTaps> earL, earR;
     OnePoleLowpass airL, airR;
-    Fdn<8> fdn;
+    Diffuser<4> diffL, diffR;
+    Fdn<16> fdn;
     float lastShape = -1.0f, lastPos = -1.0f;
     MachineParams params;
 };
