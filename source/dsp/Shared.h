@@ -87,6 +87,8 @@ public:
             // Alternating input/output signs decorrelate the channels.
             signs[i] = ((i * 7 + i / 2) % 3 == 0) ? -1.0f : 1.0f;
         }
+        for (auto& ap : loopAllpass)
+            ap.prepare (static_cast<std::size_t> (msToSamples (kMaxLoopAllpassMs, fs)) + 2);
         inputGain.prepare (fs, 50.0f);
         modDepth.prepare (fs, 50.0f);
         reset();
@@ -97,6 +99,7 @@ public:
         for (std::size_t i = 0; i < N; ++i)
         {
             lines[i].reset();
+            loopAllpass[i].reset();
             decay[i].reset();
             delays[i].snapTo (delays[i].getTarget());
             gLow[i].snapTo (gLow[i].getTarget());
@@ -120,6 +123,19 @@ public:
         decaySettings = d;
         aLow = OnePoleLowpass::coefficientFor (d.lowHz, fs);
         aHigh = OnePoleLowpass::coefficientFor (d.highHz, fs);
+        updateGains();
+    }
+
+    // Optional allpass inside each feedback path. Short networks (small rooms) otherwise
+    // have too few echo paths and ring at individual pitches; an allpass per line multiplies
+    // the echo density and spreads the modes without changing the tone or the decay.
+    // Gain 0 turns it off. Delays are in milliseconds, up to kMaxLoopAllpassMs.
+    void setLoopAllpasses (const std::array<float, N>& ms, float gain)
+    {
+        const float maxSamples = msToSamples (kMaxLoopAllpassMs, fs);
+        for (std::size_t i = 0; i < N; ++i)
+            loopAllpassDelay[i] = static_cast<std::size_t> (std::clamp (std::round (msToSamples (ms[i], fs)), 1.0f, maxSamples));
+        loopAllpassGain = std::clamp (gain, 0.0f, 0.75f);
         updateGains();
     }
 
@@ -147,7 +163,10 @@ public:
             y[i] = lines[i].readFractional (d);
             if (i % 2 == 0) sumL += signs[i] * y[i];
             else            sumR += signs[i] * y[i];
-            y[i] = hook (i, decay[i].process (y[i], aLow, aHigh, gLow[i].next(), gMid[i].next(), gHigh[i].next()));
+            float v = decay[i].process (y[i], aLow, aHigh, gLow[i].next(), gMid[i].next(), gHigh[i].next());
+            if (loopAllpassGain > 0.0f)
+                v = loopAllpass[i].process (v, loopAllpassDelay[i], loopAllpassGain);
+            y[i] = hook (i, v);
         }
         hadamard (y);
         for (std::size_t i = 0; i < N; ++i)
@@ -166,13 +185,16 @@ public:
     // Energy loss of the loop is bounded by the decay gains, so the network is stable for
     // any setting where every gain is <= 1 (the mixing matrix is orthogonal).
     static constexpr float kMaxModMs = 3.0f;
+    static constexpr float kMaxLoopAllpassMs = 8.0f;
 
 private:
     void updateGains()
     {
         for (std::size_t i = 0; i < N; ++i)
         {
-            const float d = delays[i].getTarget();
+            // An allpass delays the signal by its length on average, so it counts toward the loop time.
+            const float d = delays[i].getTarget()
+                          + (loopAllpassGain > 0.0f ? static_cast<float> (loopAllpassDelay[i]) : 0.0f);
             if (frozen)
             {
                 gLow[i].setTarget (1.0f);
@@ -191,6 +213,9 @@ private:
     double fs = 48000.0;
     float maxDelay = 0.0f;
     std::array<DelayLine, N> lines;
+    std::array<Allpass, N> loopAllpass;
+    std::array<std::size_t, N> loopAllpassDelay {};
+    float loopAllpassGain = 0.0f;
     std::array<ThreeBandDecay, N> decay;
     std::array<Smoother, N> delays, gLow, gMid, gHigh;
     std::array<Lfo, N> lfos;

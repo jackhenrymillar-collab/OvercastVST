@@ -50,7 +50,7 @@ inline std::unique_ptr<ReverbMachine> createMachine (MachineId id)
 // Output trim per machine so switching machines keeps a similar loudness at default
 // settings. Measured by the "machines are loudness matched" test (tests/MachineTests.cpp).
 inline constexpr float kMachineTrim[kNumMachines] = {
-    0.498f, // Chamber
+    0.662f, // Chamber
     0.767f, // Arena
     1.000f, // Sheet (reference)
     0.756f, // Coil
@@ -60,8 +60,8 @@ inline constexpr float kMachineTrim[kNumMachines] = {
     1.044f, // Choir
     0.873f, // Halo
     1.966f, // Tape Echo
-    0.773f, // Gate
-    0.753f  // Space Map
+    0.776f, // Gate
+    0.795f  // Space Map
 };
 
 } // namespace overcast::dsp

@@ -217,6 +217,70 @@ TEST_CASE ("Machines are loudness matched")
     }
 }
 
+// A tail that rings at fixed pitches sounds metallic. That shows up in the impulse
+// response as echoes that repeat at a fixed spacing, so the strongest repeat (the
+// autocorrelation peak) has to stay small. Sheet and Haze measure 0.12 to 0.15;
+// Chamber, Space Map and Gate used to measure 0.3 to 0.45. Coil (spring drip) and
+// Tape Echo repeat on purpose and are left out.
+TEST_CASE ("Tails don't ring with repeating echoes")
+{
+    struct Setting { int id; float param1; float decay; };
+    const auto setting = GENERATE (
+        Setting { static_cast<int> (MachineId::chamber), 0.0f, 1.4f },
+        Setting { static_cast<int> (MachineId::chamber), 0.5f, 1.4f },
+        Setting { static_cast<int> (MachineId::chamber), 1.0f, 3.0f },
+        Setting { static_cast<int> (MachineId::spaceMap), 0.0f, 1.8f },
+        Setting { static_cast<int> (MachineId::spaceMap), 0.6f, 1.8f },
+        Setting { static_cast<int> (MachineId::gate), 0.0f, 0.45f },
+        Setting { static_cast<int> (MachineId::gate), 0.5f, 1.0f },
+        Setting { static_cast<int> (MachineId::sheet), 0.5f, 3.0f },
+        Setting { static_cast<int> (MachineId::haze), 0.5f, 3.0f });
+
+    const double fs = 24000.0; // the machines are sample-rate independent; this keeps the test quick
+    auto p = defaults();
+    p.param1 = setting.param1;
+    p.decaySeconds = setting.decay;
+    p.mod = 0.3f;
+    auto m = make (setting.id, fs, p);
+    std::vector<float> in (static_cast<std::size_t> (fs * 0.7), 0.0f);
+    in[0] = 1.0f;
+    const auto out = render (*m, in);
+
+    // Low frequencies decay slowest and dominate a late tail, which shows up as a slow
+    // repeat that isn't flutter. Look above 200 Hz, where ringing is heard.
+    std::vector<float> tail = out.l;
+    Biquad hp1, hp2;
+    hp1.setHighpass (200.0f, fs);
+    hp2.setHighpass (200.0f, fs);
+    for (auto& v : tail)
+        v = hp2.process (hp1.process (v));
+
+    // 50 ms to 650 ms: past the direct sound, inside the tail.
+    const std::size_t start = static_cast<std::size_t> (0.05 * fs), n = static_cast<std::size_t> (0.6 * fs);
+    const float* x = tail.data() + start;
+    double zero = 0.0;
+    for (std::size_t i = 0; i < n; ++i)
+        zero += static_cast<double> (x[i]) * x[i];
+    REQUIRE (zero > 0.0);
+
+    double worst = 0.0;
+    std::size_t worstLag = 0;
+    for (std::size_t lag = static_cast<std::size_t> (0.002 * fs); lag < n / 2; ++lag)
+    {
+        double sum = 0.0;
+        for (std::size_t i = 0; i + lag < n; ++i)
+            sum += static_cast<double> (x[i]) * x[i + lag];
+        if (std::abs (sum) / zero > worst)
+        {
+            worst = std::abs (sum) / zero;
+            worstLag = lag;
+        }
+    }
+    INFO (kNames[setting.id] << " param1 " << setting.param1 << ": repeat of " << worst
+                             << " at " << 1000.0 * static_cast<double> (worstLag) / fs << " ms");
+    CHECK (worst < 0.25);
+}
+
 TEST_CASE ("Tape Echo repeats at the Pre-delay time")
 {
     const double fs = 48000.0;

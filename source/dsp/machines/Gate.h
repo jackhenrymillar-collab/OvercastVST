@@ -3,18 +3,20 @@
 #include "../ReverbMachine.h"
 #include "../Shared.h"
 
+#include <cstdint>
+
 namespace overcast::dsp
 {
 
 // Gate: nonlinear reverbs in the style of 1980s studio units. Diffused input feeds a
-// bank of 48 delay taps spread over the gate time, whose gains trace an envelope:
+// bank of 96 delay taps spread over the gate time, whose gains trace an envelope:
 // gate (flat, then a sharp cut), reverse (rising ramp) or swell (rise and fall).
 // Decay sets the gate time (80 ms to 1.5 s). param1 morphs the envelope shape,
 // param2 = diffusion. Freeze mutes the input and lets the pattern ring out.
 class Gate final : public ReverbMachine
 {
 public:
-    static constexpr std::size_t kTaps = 48;
+    static constexpr std::size_t kTaps = 96;
 
     void prepare (double sampleRate, int) override
     {
@@ -42,7 +44,7 @@ public:
     void setParams (const MachineParams& p) override
     {
         params = p;
-        diffusion.setTarget (0.4f + 0.35f * std::clamp (p.param2, 0.0f, 1.0f));
+        diffusion.setTarget (0.35f + 0.27f * std::clamp (p.param2, 0.0f, 1.0f));
         inputGain.setTarget (p.freeze ? 0.0f : 1.0f);
 
         const float gateMs = 1000.0f * std::clamp (p.decaySeconds, 0.08f, 1.5f);
@@ -65,12 +67,27 @@ public:
             energy += e * e;
         }
         const float norm = 1.0f / std::sqrt (std::max (energy, 1.0e-6f));
+        // Evenly spaced taps are a comb filter that rings at the spacing's pitch, and any
+        // repeating pattern of offsets (even a golden-ratio one) makes the taps line up
+        // again further along. So each tap is moved by up to 45% of the spacing, with a
+        // random sign, from a fixed-seed generator: the pattern is the same every time
+        // but never repeats.
+        const float spacing = gateMs / static_cast<float> (kTaps);
+        std::uint32_t seedL = 0x9e3779b9u, seedR = 0x7f4a7c15u;
+        const auto next = [] (std::uint32_t& s)
+        {
+            s ^= s << 13; s ^= s >> 17; s ^= s << 5; // xorshift32
+            return static_cast<float> (s >> 8) / 16777216.0f;
+        };
         for (std::size_t k = 0; k < kTaps; ++k)
         {
-            const float base = gateMs * (static_cast<float> (k) + 0.5f) / static_cast<float> (kTaps);
-            const float sign = ((k * 5 + 1) % 3 == 0) ? -1.0f : 1.0f;
-            tapsL.setTap (k, base + kJitter[k % 8] * gateMs / static_cast<float> (kTaps), sign * env[k] * norm);
-            tapsR.setTap (k, base + kJitter[(k + 3) % 8] * gateMs / static_cast<float> (kTaps), -sign * env[k] * norm);
+            const float base = spacing * (static_cast<float> (k) + 0.5f);
+            const float jitterL = 0.9f * (next (seedL) - 0.5f);
+            const float jitterR = 0.9f * (next (seedR) - 0.5f);
+            const float signL = next (seedL) < 0.5f ? -1.0f : 1.0f;
+            const float signR = next (seedR) < 0.5f ? -1.0f : 1.0f;
+            tapsL.setTap (k, std::max (0.1f, base + jitterL * spacing), signL * env[k] * norm);
+            tapsR.setTap (k, std::max (0.1f, base + jitterR * spacing), signR * env[k] * norm);
         }
     }
 
@@ -87,8 +104,6 @@ public:
     }
 
 private:
-    static constexpr std::array<float, 8> kJitter { 0.11f, -0.23f, 0.31f, -0.07f, 0.19f, -0.29f, 0.03f, -0.17f };
-
     double fs = 48000.0;
     Diffuser<4> diffInL, diffInR;
     Diffuser<2> diffOutL, diffOutR;
