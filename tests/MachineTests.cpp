@@ -234,7 +234,12 @@ TEST_CASE ("Tails don't ring with repeating echoes")
         Setting { static_cast<int> (MachineId::gate), 0.0f, 0.45f },
         Setting { static_cast<int> (MachineId::gate), 0.5f, 1.0f },
         Setting { static_cast<int> (MachineId::sheet), 0.5f, 3.0f },
-        Setting { static_cast<int> (MachineId::haze), 0.5f, 3.0f });
+        Setting { static_cast<int> (MachineId::haze), 0.5f, 3.0f },
+        Setting { static_cast<int> (MachineId::arena), 0.0f, 3.0f },
+        Setting { static_cast<int> (MachineId::arena), 1.0f, 3.0f },
+        Setting { static_cast<int> (MachineId::blossom), 0.5f, 3.0f },
+        Setting { static_cast<int> (MachineId::choir), 0.5f, 3.0f },
+        Setting { static_cast<int> (MachineId::halo), 0.5f, 3.0f });
 
     const double fs = 24000.0; // the machines are sample-rate independent; this keeps the test quick
     auto p = defaults();
@@ -361,14 +366,20 @@ TEST_CASE ("Switching machines never clips or produces NaN, with and without spi
     CHECK (sawSpill);
 }
 
-TEST_CASE ("Moving the size knob doesn't click")
+TEST_CASE ("Moving knobs that change delay lengths doesn't click or zip")
 {
-    // A 220 Hz sine through the engine while the first knob jumps between extremes.
-    // Delay lengths may glide (a small pitch bend) but must never jump; a jump shows up
-    // as a burst of energy far above the sine, so the 4th-order highpassed output must
-    // stay quiet.
-    const int machine = GENERATE (0, 11); // Chamber, Space Map
-    CAPTURE (kNames[machine]);
+    // A 220 Hz sine through the engine while a knob jumps between extremes. Delay
+    // lengths may glide (a small pitch bend) but must never jump or sweep fast; either
+    // shows up as a burst of energy far above the sine, so the 4th-order highpassed
+    // output must stay quiet.
+    struct Case { int machine; bool decayKnob; };
+    const auto c = GENERATE (Case { 0, false },   // Chamber size
+                             Case { 11, false },  // Space Map size
+                             Case { 10, true },   // Gate time
+                             Case { 1, true },    // Arena decay
+                             Case { 7, true });   // Choir decay
+    const int machine = c.machine;
+    CAPTURE (kNames[machine], c.decayKnob);
     const double fs = 48000.0;
     constexpr int B = 64;
     ReverbEngine e;
@@ -387,7 +398,11 @@ TEST_CASE ("Moving the size knob doesn't click")
     for (int i = 0; i < static_cast<int> (fs * 4); i += B)
     {
         if (i >= static_cast<int> (fs) && (i / B) % 750 == 0)
-            ep.machineParams.param1 = ((i / B) / 750) % 2 ? 0.9f : 0.1f;
+        {
+            const bool high = ((i / B) / 750) % 2;
+            if (c.decayKnob) ep.machineParams.decaySeconds = high ? 10.0f : 0.5f;
+            else             ep.machineParams.param1 = high ? 0.9f : 0.1f;
+        }
         e.setParams (ep);
         for (int k = 0; k < B; ++k)
         {

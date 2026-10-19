@@ -25,6 +25,7 @@ public:
         diffR.prepare (fs, { 5.3f, 3.1f, 11.9f, 9.9f });
         fdn.prepare (fs, kDelays.back());
         fdn.setDelays (kDelays);
+        fdn.setLoopAllpasses (kLoopAllpass, 0.6f);
         shifters[0].prepare (fs, 61.0f);
         shifters[1].prepare (fs, 71.0f);
         amount.prepare (fs, 40.0f);
@@ -64,7 +65,7 @@ public:
         // heads also lose about a quarter of the energy of what passes through them).
         const float blended = (1.0f - s) * (1.0f - s) + 0.75f * s * s;
         const float kept = (6.0f + 2.0f * blended) / 8.0f;
-        const float largestLineGain = decayGain (msToSamples (kDelays.front(), fs),
+        const float largestLineGain = decayGain (msToSamples (kDelays.front() + kLoopAllpass.front(), fs),
                                                  std::max ({ d.rtLow, d.rtMid, d.rtHigh }), fs);
         makeup.setTarget (p.freeze ? 1.0f : std::min (1.0f / std::sqrt (kept), 0.998f / largestLineGain));
     }
@@ -90,6 +91,9 @@ public:
 private:
     // Long lines: fewer passes per second means the shimmer tail lasts longer.
     static constexpr std::array<float, 8> kDelays { 61.3f, 71.9f, 79.1f, 89.3f, 97.7f, 107.9f, 119.3f, 131.7f };
+    // With so few, long lines the echoes are far apart and repeat audibly when Mod is
+    // low; an allpass in each loop fills the gaps between them.
+    static constexpr std::array<float, 8> kLoopAllpass { 3.31f, 7.13f, 4.57f, 6.29f, 2.83f, 5.47f, 7.61f, 3.97f };
     static constexpr std::array<float, 5> kRatios { 0.5f, 1.33484f, 1.49831f, 2.0f, 2.99661f };
 
     double fs = 48000.0;

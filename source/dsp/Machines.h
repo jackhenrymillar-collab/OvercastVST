@@ -51,15 +51,15 @@ inline std::unique_ptr<ReverbMachine> createMachine (MachineId id)
 // settings. Measured by the "machines are loudness matched" test (tests/MachineTests.cpp).
 inline constexpr float kMachineTrim[kNumMachines] = {
     0.662f, // Chamber
-    0.767f, // Arena
+    0.784f, // Arena
     1.000f, // Sheet (reference)
     0.756f, // Coil
-    0.748f, // Rise
-    0.667f, // Blossom
+    0.775f, // Rise
+    0.688f, // Blossom
     0.834f, // Haze
-    1.044f, // Choir
-    0.873f, // Halo
-    1.966f, // Tape Echo
+    1.120f, // Choir
+    0.898f, // Halo
+    2.025f, // Tape Echo
     0.776f, // Gate
     0.795f  // Space Map
 };
