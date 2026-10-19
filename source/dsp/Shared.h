@@ -87,8 +87,11 @@ public:
             // Alternating input/output signs decorrelate the channels.
             signs[i] = ((i * 7 + i / 2) % 3 == 0) ? -1.0f : 1.0f;
         }
-        for (auto& ap : loopAllpass)
-            ap.prepare (static_cast<std::size_t> (msToSamples (kMaxLoopAllpassMs, fs)) + 2);
+        for (std::size_t i = 0; i < N; ++i)
+        {
+            loopAllpass[i].prepare (static_cast<std::size_t> (msToSamples (kMaxLoopAllpassMs, fs)) + 2);
+            loopAllpassDelay[i].prepare (fs, 60.0f);
+        }
         inputGain.prepare (fs, 50.0f);
         modDepth.prepare (fs, 50.0f);
         reset();
@@ -100,6 +103,7 @@ public:
         {
             lines[i].reset();
             loopAllpass[i].reset();
+            loopAllpassDelay[i].snapTo (loopAllpassDelay[i].getTarget());
             decay[i].reset();
             delays[i].snapTo (delays[i].getTarget());
             gLow[i].snapTo (gLow[i].getTarget());
@@ -134,7 +138,11 @@ public:
     {
         const float maxSamples = msToSamples (kMaxLoopAllpassMs, fs);
         for (std::size_t i = 0; i < N; ++i)
-            loopAllpassDelay[i] = static_cast<std::size_t> (std::clamp (std::round (msToSamples (ms[i], fs)), 1.0f, maxSamples));
+        {
+            const float target = std::clamp (std::round (msToSamples (ms[i], fs)), 1.0f, maxSamples);
+            if (loopAllpassDelay[i].getCurrent() < 1.0f) loopAllpassDelay[i].snapTo (target); // first use
+            else                                         loopAllpassDelay[i].setTarget (target);
+        }
         loopAllpassGain = std::clamp (gain, 0.0f, 0.75f);
         updateGains();
     }
@@ -165,7 +173,15 @@ public:
             else            sumR += signs[i] * y[i];
             float v = decay[i].process (y[i], aLow, aHigh, gLow[i].next(), gMid[i].next(), gHigh[i].next());
             if (loopAllpassGain > 0.0f)
-                v = loopAllpass[i].process (v, loopAllpassDelay[i], loopAllpassGain);
+            {
+                // The length glides when the size changes (a jump would click); once
+                // settled it is a whole number of samples and needs no interpolation.
+                auto& apd = loopAllpassDelay[i];
+                if (apd.isSettled())
+                    v = loopAllpass[i].process (v, static_cast<std::size_t> (apd.getTarget()), loopAllpassGain);
+                else
+                    v = loopAllpass[i].processModulated (v, apd.next(), loopAllpassGain);
+            }
             y[i] = hook (i, v);
         }
         hadamard (y);
@@ -194,7 +210,7 @@ private:
         {
             // An allpass delays the signal by its length on average, so it counts toward the loop time.
             const float d = delays[i].getTarget()
-                          + (loopAllpassGain > 0.0f ? static_cast<float> (loopAllpassDelay[i]) : 0.0f);
+                          + (loopAllpassGain > 0.0f ? loopAllpassDelay[i].getTarget() : 0.0f);
             if (frozen)
             {
                 gLow[i].setTarget (1.0f);
@@ -214,7 +230,7 @@ private:
     float maxDelay = 0.0f;
     std::array<DelayLine, N> lines;
     std::array<Allpass, N> loopAllpass;
-    std::array<std::size_t, N> loopAllpassDelay {};
+    std::array<Smoother, N> loopAllpassDelay;
     float loopAllpassGain = 0.0f;
     std::array<ThreeBandDecay, N> decay;
     std::array<Smoother, N> delays, gLow, gMid, gHigh;

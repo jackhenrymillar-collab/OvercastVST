@@ -360,3 +360,55 @@ TEST_CASE ("Switching machines never clips or produces NaN, with and without spi
     CHECK (peak <= 1.0f);
     CHECK (sawSpill);
 }
+
+TEST_CASE ("Moving the size knob doesn't click")
+{
+    // A 220 Hz sine through the engine while the first knob jumps between extremes.
+    // Delay lengths may glide (a small pitch bend) but must never jump; a jump shows up
+    // as a burst of energy far above the sine, so the 4th-order highpassed output must
+    // stay quiet.
+    const int machine = GENERATE (0, 11); // Chamber, Space Map
+    CAPTURE (kNames[machine]);
+    const double fs = 48000.0;
+    constexpr int B = 64;
+    ReverbEngine e;
+    EngineParams ep;
+    ep.machine = machine;
+    ep.machineParams = defaults();
+    ep.machineParams.decaySeconds = 2.0f;
+    ep.machineParams.param1 = 0.1f;
+    ep.mix = 0.5f;
+    ep.preDelayMs = 20.0f;
+    e.setParams (ep);
+    e.prepare (fs, B);
+    float L[B], R[B], x1 = 0, h0 = 0, h1 = 0, h2 = 0, worst = 0;
+    double ph = 0, acc = 0;
+    int count = 0;
+    for (int i = 0; i < static_cast<int> (fs * 4); i += B)
+    {
+        if (i >= static_cast<int> (fs) && (i / B) % 750 == 0)
+            ep.machineParams.param1 = ((i / B) / 750) % 2 ? 0.9f : 0.1f;
+        e.setParams (ep);
+        for (int k = 0; k < B; ++k)
+        {
+            L[k] = R[k] = 0.3f * static_cast<float> (std::sin (ph));
+            ph += 2.0 * 3.14159265358979 * 220.0 / fs;
+        }
+        e.process (L, R, B);
+        for (int k = 0; k < B; ++k)
+        {
+            const float y = L[k] - x1; x1 = L[k];
+            const float z = y - h0; h0 = y;
+            const float w = z - h1; h1 = z;
+            const float q = w - h2; h2 = w;
+            acc += q * q;
+            if (++count == 480)
+            {
+                if (i > fs / 2) worst = std::max (worst, static_cast<float> (std::sqrt (acc / 480.0)));
+                acc = 0;
+                count = 0;
+            }
+        }
+    }
+    CHECK (20.0f * std::log10 (worst + 1.0e-12f) < -60.0f);
+}
