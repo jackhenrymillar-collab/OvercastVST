@@ -54,6 +54,7 @@ jobs:
                xattr -cr ~/Library/Audio/Plug-Ins/Components/Overcast.component
           3. Restart your DAW and rescan plug-ins.
           TXT
+          cp THIRD_PARTY_NOTICES.md dist/
           ditto -c -k --keepParent dist Overcast-macOS.zip
 
       - name: Upload plugins

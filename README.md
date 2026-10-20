@@ -27,6 +27,9 @@ with factory and user presets and A/B compare.
 The fonts are Cormorant Garamond and Jost, embedded from `resources/fonts` under the
 SIL Open Font License.
 
+Aurora's reverb core follows Cloud Seed by Ghost Note Audio (MIT licence). Overcast is not
+made by or affiliated with Ghost Note Audio; see `THIRD_PARTY_NOTICES.md`.
+
 ## Building on macOS
 
 Requirements: Xcode 15 or later (command line tools are enough) and CMake 3.22+.
@@ -110,7 +113,7 @@ CI also runs `auval` and `pluginval` (strictness 10, including its editor tests)
 | Rise | Auto-swell | Rise time (50 ms to 3 s) | Mode: reverb only / reverb and dry |
 | Blossom | Tail that grows after the attack | Bloom length | Bloom feedback |
 | Haze | Huge ambient wash | Diffusion | Smear |
-| Aurora | Modal reverb: 2048 tuned resonators | Pitch (-12 to +12 semitones) | Harmony (natural to harmonic) |
+| Aurora | Cloud Seed style: 8 parallel delay lines per side, each with modulated diffusers in its loop | Size (30 to 300 ms) | Diffusion (echoes to cloud) |
 | Halo | Shimmer | Interval (-12, +5, +7, +12, +19) | Shimmer amount |
 | Nebula | Velvet-noise network, dense from the first moment | Darkness | Softness (quick wash to slow bloom) |
 | Clear Night | Colourless hall with optimised delay tuning | Size (0.6x to 1.6x) | Brightness |
@@ -119,7 +122,7 @@ CI also runs `auval` and `pluginval` (strictness 10, including its editor tests)
 Notes:
 - Machines built on a feedback network (all but Sheet, Coil and Aurora) slowly rotate their feedback matrix, so the Mod knob smooths the tail without detuning it much.
 - Long decays keep their tails smooth on their own: from 3 s to 8 s of Decay (and whenever frozen) the matrix rotation swings further whatever Mod is set to, at its usual slow rates. A still network's long tail otherwise splits into separate pitches that ring on, worst below 500 Hz. Turning faster smooths the tail more but makes held notes swirl, so it stays slow.
-- Sheet and Aurora get the same treatment their own way: Sheet's two tank halves cross through slowly turning lossless mixes, and Aurora's tones drift slightly. Both ramp in from 3 s to 8 s of Decay, so short settings sound as before. Coil stays a plain spring tank.
+- Sheet and Aurora get the same treatment their own way: Sheet's two tank halves cross through slowly turning lossless mixes, and Aurora keeps a little of its slow modulation. Both ramp in from 3 s to 8 s of Decay, so short settings sound as before. Coil stays a plain spring tank.
 - Delay lines in every network machine are prime sample counts at 48 kHz, with no two lines near a 2:1, 3:2 or 4:3 ratio, so their resonances never stack. (Clear Night keeps its optimised set, which is already prime.)
 - Input diffusers are cascades of short allpasses, all under 10 ms (six per side in most machines, twelve in Haze), so they thicken the attack without a metallic tone. Blossom's in-loop diffusers follow the same rule. Sheet keeps Dattorro's long tank allpasses, which make the plate sound.
 - Every feedback loop has a safety guard: it does nothing in normal use (loop signals peak at about a third of its threshold even with +12 dBFS noise into a frozen tail), but it saturates any runaway and drops non-finite values, so the plugin can't blow up.
