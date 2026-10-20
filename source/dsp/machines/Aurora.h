@@ -11,7 +11,7 @@ namespace overcast::dsp
 // Aurora: a huge, lush wash for pads and ambient sound. The core follows Cloud Seed by
 // Ghost Note Audio (Valdemar Erlingsson), MIT licensed: https://github.com/GhostNoteAudio/
 // CloudSeedCore. Each channel runs eight independent feedback delay lines in parallel,
-// and every line has its own chain of slowly modulated allpass diffusers inside its loop,
+// and every line has its own chain of six short, slowly modulated allpass diffusers in its loop,
 // so each pass round a line smears the sound further. The left and right channels use
 // different line lengths, so the tail is wide even from a mono source.
 //
@@ -22,6 +22,7 @@ namespace overcast::dsp
 //   2:1, 3:2 or 4:3 ratio, so their resonances don't stack.
 // - Decay is frequency dependent (three bands, gains worked out per line so every line
 //   decays at the same rate in each band) instead of fixed shelf cuts per pass.
+// - Every diffuser is under 10 ms (more, shorter stages instead of a few long ones).
 // - Delay lengths glide when Size moves, and every loop has the safety guard.
 // - Long decays keep a little modulation even at Mod 0 so the tail never rings, always
 //   at Cloud Seed's slow rates (well under 1 Hz) so held notes don't swirl.
@@ -32,11 +33,13 @@ class Aurora final : public ReverbMachine
 {
 public:
     static constexpr std::size_t kLines = 8;    // per channel
-    static constexpr std::size_t kStages = 4;   // diffusers inside each line
-    static constexpr std::size_t kEarly = 4;    // input diffusers per channel
+    static constexpr std::size_t kStages = 6;   // diffusers inside each line
+    static constexpr std::size_t kEarly = 8;    // input diffusers per channel
     static constexpr float kMinSizeMs = 30.0f, kMaxSizeMs = 300.0f;
-    static constexpr float kStageMaxMs = 32.0f; // longest diffuser in a loop (Cloud Seed's Dark Plate)
-    static constexpr float kEarlyMaxMs = 40.0f;
+    // Every diffuser is under 10 ms: Cloud Seed's Dark Plate uses up to 32 ms in its loops,
+    // but many short stages give the same density without a metallic colour.
+    static constexpr float kStageMaxMs = 9.5f;
+    static constexpr float kEarlyMaxMs = 9.5f;
     static constexpr float kLineModMs = 1.0f, kStageModMs = 0.5f;
 
     void prepare (double sampleRate, int) override
@@ -230,9 +233,9 @@ private:
 
     // Cloud Seed's random series: a 32-bit LCG, with the left channel reading the series
     // from ~seed and the right from seed (its default cross-seed of 0).
-    static std::array<float, 12> seriesFor (std::uint64_t seed, std::size_t count, std::size_t channel)
+    static std::array<float, 24> seriesFor (std::uint64_t seed, std::size_t count, std::size_t channel)
     {
-        std::array<float, 12> out {};
+        std::array<float, 24> out {};
         std::uint64_t x = channel == 0 ? ~seed : seed;
         for (std::size_t k = 0; k < count && k < out.size(); ++k)
         {
