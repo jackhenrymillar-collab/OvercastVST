@@ -18,6 +18,9 @@ public:
     {
         fs = sampleRate;
         core.prepare (fs);
+        // Extra long-tail movement from Rise's ringing score at 12 s of decay (6.2):
+        // 1 + 0.5 x (score - 4).
+        core.setTailMovement (2.1f);
         fast.prepare (fs, 0.5f, 25.0f);
         slow.prepare (fs, 40.0f, 400.0f);
         dryEnv.assign (static_cast<std::size_t> (maxBlockSize), 1.0f);

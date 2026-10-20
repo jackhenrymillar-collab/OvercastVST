@@ -539,3 +539,36 @@ TEST_CASE ("Long tails don't ring at separate pitches")
         CHECK (peaky < (id == static_cast<int> (MachineId::halo) ? 10.0 : 5.0));
     }
 }
+
+// Low-mid resonance, 150 to 700 Hz, where Jack asked for the least ringing. Measured on
+// an impulse (no notes of its own) at 9 s of decay and Mod 30, averaged over five 2 s
+// slices from 1 to 7 s: a smooth noise-like tail scores about 1. Chamber, Sheet,
+// Blossom, Halo and Space Map sweep a low-mid allpass in long tails to keep it down.
+TEST_CASE ("Long tails don't resonate between 150 and 700 Hz")
+{
+    const auto id = GENERATE (static_cast<int> (MachineId::chamber), static_cast<int> (MachineId::arena),
+                              static_cast<int> (MachineId::sheet), static_cast<int> (MachineId::rise),
+                              static_cast<int> (MachineId::blossom), static_cast<int> (MachineId::haze),
+                              static_cast<int> (MachineId::aurora), static_cast<int> (MachineId::halo),
+                              static_cast<int> (MachineId::nebula), static_cast<int> (MachineId::clearNight),
+                              static_cast<int> (MachineId::spaceMap));
+    const double fs = 16000.0;
+    auto p = defaults();
+    p.decaySeconds = 9.0f;
+    p.mod = 0.3f;
+    p.param1 = id == static_cast<int> (MachineId::halo) ? 0.7f : 0.5f;
+    p.param2 = id == static_cast<int> (MachineId::halo) ? 0.6f : 0.5f;
+    auto m = make (id, fs, p);
+    std::vector<float> in (static_cast<std::size_t> (fs * 7.5), 0.0f);
+    in[0] = 1.0f;
+    const auto out = render (*m, in);
+    std::vector<float> sum (out.l.size());
+    for (std::size_t i = 0; i < sum.size(); ++i)
+        sum[i] = out.l[i] + out.r[i];
+    double score = 0.0;
+    for (double t : { 1.0, 2.0, 3.0, 4.0, 5.0 })
+        score += 0.1 * (ringingPitches (sum, fs, t, 150.0, 300.0) + ringingPitches (sum, fs, t, 300.0, 700.0));
+    INFO (kNames[id] << ": " << score);
+    // Measured 1.05 to 1.8 (Sheet 2.3: a plate tank has only two loops).
+    CHECK (score < (id == static_cast<int> (MachineId::sheet) ? 2.6 : 2.0));
+}

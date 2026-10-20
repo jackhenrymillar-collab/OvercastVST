@@ -79,16 +79,19 @@ struct DecaySettings
 // Long tails need more movement. Past about 3 s of decay a static network's tail splits
 // into separate pitches that ring on (worst below 500 Hz, where delay modulation barely
 // reaches), so from 3 s to 8 s of decay, and whenever frozen, the rotation grows to a
-// 90 degree swing, whatever Mod is set to. It keeps its slow rates (0.09 to 0.4 Hz):
-// turning faster smooths the tail further but makes held notes swirl audibly (phasing),
-// which is worse than a little ringing.
+// 90 degree swing, whatever Mod is set to. Jack picked the middle setting by ear: the
+// rotation turns up to twice its slow rates (0.09 to 0.4 Hz, so at most 0.8 Hz) and the
+// delays drift by up to 1 ms. Much faster turning makes held notes swirl (phasing);
+// slower lets low notes ring.
 template <std::size_t N>
 class Fdn
 {
 public:
-    void prepare (double sampleRate, float maxDelayMs)
+    // maxLoopAllpassMs: the longest in-loop allpass this network will be given.
+    void prepare (double sampleRate, float maxDelayMs, float maxLoopAllpassMs = 8.0f)
     {
         fs = sampleRate;
+        maxLoopAllpass = maxLoopAllpassMs;
         maxDelay = msToSamples (maxDelayMs, fs) + msToSamples (kMaxModMs, fs) + 8.0f;
         for (std::size_t i = 0; i < N; ++i)
         {
@@ -97,20 +100,32 @@ public:
             gLow[i].prepare (fs, 30.0f);
             gMid[i].prepare (fs, 30.0f);
             gHigh[i].prepare (fs, 30.0f);
+            smear[i].prepare (fs, 324.0f, 0.07f + 0.023f * static_cast<float> (i) * (16.0f / static_cast<float> (N)),
+                              static_cast<float> ((i * 5) % N) / static_cast<float> (N));
             lfos[i].prepare (fs);
             lfos[i].setPhase (static_cast<float> (i) / static_cast<float> (N));
             lfos[i].setFrequency (0.11f + 0.07f * static_cast<float> (i));
+            drifts[i].prepare (fs);
+            drifts[i].setPhase (static_cast<float> (i) / static_cast<float> (N));
+            drifts[i].setFrequency (0.11f + 0.07f * static_cast<float> (i));
             // Alternating input/output signs decorrelate the channels.
             signs[i] = ((i * 7 + i / 2) % 3 == 0) ? -1.0f : 1.0f;
         }
         for (std::size_t i = 0; i < N; ++i)
         {
-            loopAllpass[i].prepare (static_cast<std::size_t> (msToSamples (kMaxLoopAllpassMs, fs)) + 2);
+            loopAllpass[i].prepare (static_cast<std::size_t> (msToSamples (maxLoopAllpass, fs)) + 2);
             loopAllpassDelay[i].prepare (fs, 60.0f);
         }
         inputGain.prepare (fs, 50.0f);
         modDepth.prepare (fs, 50.0f);
         rotation.prepare (fs, 50.0f);
+        tailDepth.prepare (fs, 50.0f);
+        // A delay swinging D seconds peak to peak at f Hz bends pitch by about
+        // 1731 * pi * f * D cents; solve for D at the fastest line's rate.
+        {
+            const float fastestHz = 0.11f + 0.07f * static_cast<float> (N - 1);
+            maxTailDriftMs = 1000.0f * kMaxTailCents / (1731.0f * std::numbers::pi_v<float> * fastestHz);
+        }
         for (std::size_t k = 0; k < N / 2; ++k)
         {
             // 0.09 to about 0.4 Hz, spread so no two pairs line up.
@@ -128,6 +143,7 @@ public:
             loopAllpass[i].reset();
             loopAllpassDelay[i].snapTo (loopAllpassDelay[i].getTarget());
             decay[i].reset();
+            smear[i].reset();
             delays[i].snapTo (delays[i].getTarget());
             gLow[i].snapTo (gLow[i].getTarget());
             gMid[i].snapTo (gMid[i].getTarget());
@@ -136,6 +152,7 @@ public:
         inputGain.snapTo (inputGain.getTarget());
         modDepth.snapTo (modDepth.getTarget());
         rotation.snapTo (rotation.getTarget());
+        tailDepth.snapTo (tailDepth.getTarget());
         for (std::size_t k = 0; k < N / 2; ++k)
         {
             rotPhase[k] = 0.37f * static_cast<float> (k);
@@ -165,10 +182,10 @@ public:
     // Optional allpass inside each feedback path. Short networks (small rooms) otherwise
     // have too few echo paths and ring at individual pitches; an allpass per line multiplies
     // the echo density and spreads the modes without changing the tone or the decay.
-    // Gain 0 turns it off. Delays are in milliseconds, up to kMaxLoopAllpassMs.
+    // Gain 0 turns it off. Delays are in milliseconds, up to the maximum given to prepare.
     void setLoopAllpasses (const std::array<float, N>& ms, float gain)
     {
-        const float maxSamples = msToSamples (kMaxLoopAllpassMs, fs);
+        const float maxSamples = msToSamples (maxLoopAllpass, fs);
         for (std::size_t i = 0; i < N; ++i)
         {
             const float target = std::clamp (std::round (msToSamples (ms[i], fs)), 1.0f, maxSamples);
@@ -188,6 +205,29 @@ public:
         modDepth.setTarget (std::clamp (delayShare, 0.0f, 1.0f) * d * msToSamples (kMaxModMs, fs));
         modAmount = d;
         updateRotation();
+    }
+
+    // Smooth random drift in place of the sine wobble on each line (see DriftLfo). By ear
+    // and by ringing score it only helped Space Map, so it is off unless a machine asks.
+    void setRandomDrift (bool on) noexcept { useDrift = on; }
+
+    // Scales the extra movement long tails get (the faster rotation and the delay drift
+    // from 3 s to 8 s of decay). 1 is the "Middle" setting; machines whose long tails
+    // still ring ask for a little more. capDrift false keeps the full delay drift instead of
+    // capping it at kMaxTailCents (Arena: Jack preferred it uncapped by ear).
+    void setTailMovement (float amount, bool capDrift = true)
+    {
+        tailMovement = std::max (0.0f, amount);
+        driftCapped = capDrift;
+        updateRotation();
+    }
+
+    // Low-mid smear: a slowly swept allpass in every line, centred on 150 to 700 Hz, whose
+    // sweep (in octaves either side) is reached in long tails. 0 leaves it out.
+    void setLowMidSmear (float octaves)
+    {
+        smearOctaves = std::max (0.0f, octaves);
+        updateSmear();
     }
 
     void setFreeze (bool f)
@@ -234,15 +274,18 @@ private:
     template <typename Inject, typename Tap, typename LineHook>
     void step (Inject&& inject, Tap&& tap, LineHook&& hook) noexcept
     {
-        const float depth = modDepth.next();
+        const float depth = std::max (modDepth.next(), tailDepth.next());
         const float in = inputGain.next();
         std::array<float, N> y {};
         for (std::size_t i = 0; i < N; ++i)
         {
-            const float d = delays[i].next() + depth * (0.5f + 0.5f * lfos[i].next()) + 2.0f;
+            const float wobble = useDrift ? drifts[i].next() : lfos[i].next();
+            const float d = delays[i].next() + depth * (0.5f + 0.5f * wobble) + 2.0f;
             y[i] = lines[i].readFractional (d);
             tap (i, y[i]);
             float v = decay[i].process (y[i], aLow, aHigh, gLow[i].next(), gMid[i].next(), gHigh[i].next());
+            if (smearOn)
+                v = smear[i].process (v);
             if (loopAllpassGain > 0.0f)
             {
                 // The length glides when the size changes (a jump would click); once
@@ -268,7 +311,7 @@ public:
     // Energy loss of the loop is bounded by the decay gains, so the network is stable for
     // any setting where every gain is <= 1 (the mixing matrix is orthogonal).
     static constexpr float kMaxModMs = 3.0f;
-    static constexpr float kMaxLoopAllpassMs = 8.0f;
+    float maxLoopAllpass = 8.0f;
 
     // Replace the Hadamard mix with another orthogonal matrix (row-major, N * N), or
     // nullptr to go back. The caller keeps the array alive. Clear Night uses this for its
@@ -303,7 +346,7 @@ private:
             const float amount = rotation.skip (static_cast<int> (kRotationBlock)) * kMaxRotation;
             for (std::size_t k = 0; k < H; ++k)
             {
-                rotPhase[k] += rotStep[k];
+                rotPhase[k] += rotStep[k] * rotRate;
                 if (rotPhase[k] >= 1.0f) rotPhase[k] -= 1.0f;
                 const float angle = amount * std::sin (6.28318531f * rotPhase[k]);
                 const float inv = 1.0f / static_cast<float> (kRotationBlock);
@@ -334,6 +377,14 @@ private:
         const float t = frozen ? 1.0f : std::clamp ((rt - kTailStart) / (kTailFull - kTailStart), 0.0f, 1.0f);
         const float tail = t * t * (3.0f - 2.0f * t);
         rotation.setTarget (std::max (modAmount, tail) * (1.0f + tail));
+        // Delay drift bends pitch, so it is capped at kMaxTailCents on the fastest line; any
+        // movement asked for beyond that goes into the rotation instead, which doesn't.
+        const float wantMs = tail * kTailDriftMs * tailMovement;
+        const float driftMs = std::min ({ wantMs, driftCapped ? maxTailDriftMs : kMaxModMs, kMaxModMs });
+        const float extra = wantMs > driftMs ? wantMs / driftMs : 1.0f;
+        rotRate = (1.0f + (kTailRate - 1.0f) * tail * tailMovement) * extra;
+        tailDepth.setTarget (msToSamples (driftMs, fs));
+        updateSmear();
     }
 
     void updateGains()
@@ -365,11 +416,33 @@ private:
     std::array<Smoother, N> loopAllpassDelay;
     float loopAllpassGain = 0.0f;
     std::array<ThreeBandDecay, N> decay;
+    std::array<SweptAllpass, N> smear;
+    float smearOctaves = 0.0f;
+    bool smearOn = false;
+    void updateSmear() noexcept
+    {
+        const float rt = decaySettings.rtMid;
+        const float t = frozen ? 1.0f : std::clamp ((rt - kTailStart) / (kTailFull - kTailStart), 0.0f, 1.0f);
+        const float oct = smearOctaves;
+        smearOn = oct > 0.0f;
+        for (auto& a : smear) a.setDepth (oct * t * t * (3.0f - 2.0f * t));
+    }
     std::array<Smoother, N> delays, gLow, gMid, gHigh;
     std::array<Lfo, N> lfos;
+    std::array<DriftLfo, N> drifts;
+    bool useDrift = false;
+    float tailMovement = 1.0f;
     std::array<float, N> signs {};
-    Smoother inputGain, modDepth, rotation;
-    float modAmount = 0.0f;
+    Smoother inputGain, modDepth, rotation, tailDepth;
+    float modAmount = 0.0f, rotRate = 1.0f;
+    static constexpr float kTailRate = 2.0f, kTailDriftMs = 1.0f; // "Middle" long-tail movement
+    // Long-tail pitch drift stays within the "lush but not wobbly" range (3 to 8 cents is
+    // the usual target; 10 to 30 cents reads as chorus). Capping it and turning the
+    // rotation faster by the same factor kept ringing scores level on average (3.06 vs
+    // 3.08 over Chamber, Arena, Rise and Halo), with less pitch bend.
+    static constexpr float kMaxTailCents = 8.0f;
+    float maxTailDriftMs = 1.27f;
+    bool driftCapped = true;
     static constexpr float kTailStart = 3.0f, kTailFull = 8.0f; // seconds of decay
     const std::array<float, N * N>* matrix = nullptr;
     std::array<float, N / 2> rotCos {}, rotSin {}, rotCosStep {}, rotSinStep {}, rotPhase {}, rotStep {};
@@ -565,8 +638,20 @@ private:
     float att = 0.0f, rel = 0.0f, env = 0.0f;
 };
 
-// Two-head granular pitch shifter with complementary sin^2 windows (the gains always sum
-// to one). Placed inside a feedback loop it keeps loop gain at or below one.
+// Two-head granular pitch shifter. Each head reads the delay line through a grain window,
+// and the two heads are half a grain apart, so one fades in as the other fades out.
+//
+// Window: the Vorbis power-complementary window, w = sin(pi/2 * sin^2(pi * phase)). It
+// starts and ends with zero slope (no corners, so no clicks or buzz at grain edges), and
+// the two heads' windows satisfy w1^2 + w2^2 = 1 exactly.
+//
+// Overlap-add gain: what the heads read is usually unrelated (a reverb tail half a grain
+// apart), and then w1^2 + w2^2 = 1 keeps the level steady. When they read the same thing
+// (a held sine, a frozen chord) the amplitudes add instead, which would bulge by up to
+// 3 dB mid-crossfade. So the shifter tracks how alike the two heads are (their
+// correlation, 0 to 1) and divides by the true output level, sqrt(1 + 2 r w1 w2). Either
+// way the output level matches the input with no flutter at the grain rate, and inside a
+// feedback loop it never adds gain.
 class PitchShifter
 {
 public:
@@ -574,9 +659,16 @@ public:
     {
         window = msToSamples (windowMs, sampleRate);
         line.prepare (static_cast<std::size_t> (window) + 16);
+        // Correlation is averaged over about one grain.
+        corrCoeff = 1.0f - std::exp (-1.0f / window);
     }
 
-    void reset() { line.reset(); phase = 0.0f; }
+    void reset()
+    {
+        line.reset();
+        phase = 0.0f;
+        eAA = eBB = eAB = 0.0f;
+    }
 
     void setRatio (float r) noexcept { step = (1.0f - r) / window; }
 
@@ -586,10 +678,18 @@ public:
         phase += step;
         phase -= std::floor (phase);
         const float p2 = phase + 0.5f >= 1.0f ? phase - 0.5f : phase + 0.5f;
-        const float w1 = std::sin (std::numbers::pi_v<float> * phase);
-        const float w2 = std::sin (std::numbers::pi_v<float> * p2);
-        return w1 * w1 * line.readFractional (3.0f + phase * window)
-             + w2 * w2 * line.readFractional (3.0f + p2 * window);
+        const float a = line.readFractional (3.0f + phase * window);
+        const float b = line.readFractional (3.0f + p2 * window);
+
+        const float s = std::sin (std::numbers::pi_v<float> * phase);
+        const float u = 0.5f * std::numbers::pi_v<float> * s * s;
+        const float w1 = std::sin (u), w2 = std::cos (u);
+
+        eAA += corrCoeff * (a * a - eAA);
+        eBB += corrCoeff * (b * b - eBB);
+        eAB += corrCoeff * (a * b - eAB);
+        const float r = std::clamp (eAB / std::sqrt (eAA * eBB + 1.0e-20f), 0.0f, 1.0f);
+        return (w1 * a + w2 * b) / std::sqrt (1.0f + 2.0f * r * w1 * w2);
     }
 
 private:
@@ -597,6 +697,8 @@ private:
     float window = 2400.0f;
     float phase = 0.0f;
     float step = 0.0f;
+    float corrCoeff = 0.001f;
+    float eAA = 0.0f, eBB = 0.0f, eAB = 0.0f;
 };
 
 } // namespace overcast::dsp

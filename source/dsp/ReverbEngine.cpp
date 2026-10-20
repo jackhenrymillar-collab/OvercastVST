@@ -1,5 +1,8 @@
 #include "ReverbEngine.h"
 
+#include <cmath>
+#include <numbers>
+
 namespace overcast::dsp
 {
 
@@ -9,6 +12,14 @@ namespace
     constexpr float kToneMaxDb = 6.0f;
     constexpr float kSilence = 1.0e-5f;     // -100 dBFS: a spilling tail below this is finished
     constexpr float kSilenceHoldSeconds = 0.3f;
+
+    // Equal-power fade curve: 0 to 1 as the fade position t goes 0 to 1.
+    inline float equalPowerGain (float t) noexcept
+    {
+        if (t >= 1.0f) return 1.0f;
+        if (t <= 0.0f) return 0.0f;
+        return std::sin (0.5f * std::numbers::pi_v<float> * t);
+    }
 }
 
 ReverbEngine::ReverbEngine()
@@ -50,6 +61,8 @@ void ReverbEngine::prepare (double sampleRate, int maxBlockSize)
     for (auto* v : { &preL, &preR, &wetL, &wetR, &oldL, &oldR, &zeros })
         v->assign (static_cast<std::size_t> (maxBlock), 0.0f);
 
+    inputLimiter.prepare (sampleRate, kInputCeiling);
+    wetLimiter.prepare (sampleRate, kWetCeiling);
     preDelaySamples.prepare (sampleRate, 80.0f);
     for (auto* s : { &dryGain, &wetGain, &toneLow, &toneHigh })
         s->prepare (sampleRate, 20.0f);
@@ -69,6 +82,7 @@ void ReverbEngine::reset()
     previous = -1;
     fadeIn = 1.0f;
     preDelayL.reset(); preDelayR.reset();
+    inputLimiter.reset(); wetLimiter.reset();
     lowCutL.reset(); lowCutR.reset(); highCutL.reset(); highCutR.reset();
     toneSplitL.reset(); toneSplitR.reset();
 
@@ -117,7 +131,8 @@ void ReverbEngine::setParams (const EngineParams& p)
     machine.setParams (mp);
 
     const float preMs = machine.consumesPreDelay() ? 0.0f : std::clamp (p.preDelayMs, 0.0f, kMaxPreDelayMs);
-    preDelaySamples.setTarget (std::max (preMs * 0.001f * static_cast<float> (fs), 2.0f));
+    const auto lookahead = static_cast<float> (inputLimiter.latency() + wetLimiter.latency());
+    preDelaySamples.setTarget (std::max (preMs * 0.001f * static_cast<float> (fs) - lookahead, 2.0f));
 
     float d = 1.0f, w = 0.0f;
     mixGains (p.mix, p.mixLaw, p.killDry, d, w);
@@ -160,8 +175,10 @@ void ReverbEngine::process (float* left, float* right, int numSamples)
         for (std::size_t i = 0; i < un; ++i)
         {
             const float d = preDelaySamples.next();
-            preDelayL.push (L[i]);
-            preDelayR.push (R[i]);
+            float inl = L[i], inr = R[i];
+            inputLimiter.process (inl, inr);
+            preDelayL.push (inl);
+            preDelayR.push (inr);
             preL[i] = preDelayL.readFractional (d);
             preR[i] = preDelayR.readFractional (d);
         }
@@ -170,13 +187,16 @@ void ReverbEngine::process (float* left, float* right, int numSamples)
         current.process (preL.data(), preR.data(), wetL.data(), wetR.data(), n);
         const float* dryEnv = current.dryEnvelope();
 
-        // Level-match the machine, and fade it in over 30 ms after a switch.
+        // Level-match the machine, and fade it in over 30 ms after a switch. The two machines'
+        // tails are unrelated sounds, so the fades are equal-power (sine and cosine): their
+        // levels add to a steady total, with no 3 dB dip halfway as a straight fade has.
         const float trimActive = kMachineTrim[active];
         for (std::size_t i = 0; i < un; ++i)
         {
             fadeIn = std::min (1.0f, fadeIn + fadeStep);
-            wetL[i] *= trimActive * fadeIn;
-            wetR[i] *= trimActive * fadeIn;
+            const float g = trimActive * equalPowerGain (fadeIn);
+            wetL[i] *= g;
+            wetR[i] *= g;
         }
 
         // The outgoing machine: fed silence, it either rings out (spillover) or fades in 30 ms.
@@ -190,8 +210,9 @@ void ReverbEngine::process (float* left, float* right, int numSamples)
             {
                 if (! previousSpills)
                     fadeOut = std::max (0.0f, fadeOut - fadeStep);
-                wetL[i] += fadeOut * trim * oldL[i];
-                wetR[i] += fadeOut * trim * oldR[i];
+                const float g = trim * equalPowerGain (fadeOut);
+                wetL[i] += g * oldL[i];
+                wetR[i] += g * oldR[i];
                 peak = std::max ({ peak, std::abs (oldL[i]), std::abs (oldR[i]) });
             }
             quietSamples = peak * fadeOut < kSilence ? quietSamples + n : 0;
@@ -218,7 +239,8 @@ void ReverbEngine::process (float* left, float* right, int numSamples)
             wl = highCutL.process (lowCutL.process (wl));
             wr = highCutR.process (lowCutR.process (wr));
 
-            wl = softLimit (wl);
+            wetLimiter.process (wl, wr);
+            wl = softLimit (wl); // final safety only: the limiter keeps the wet under this
             wr = softLimit (wr);
 
             const float dg = dryGain.next();

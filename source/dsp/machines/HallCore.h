@@ -24,6 +24,11 @@ public:
 
     void reset() { diffL.reset(); diffR.reset(); fdn.reset(); }
 
+    // Extra long-tail movement for this machine (see Fdn::setTailMovement).
+    void setTailMovement (float amount, bool capDrift = true) { fdn.setTailMovement (amount, capDrift); }
+    // Swept low-mid allpass in long tails (see Fdn::setLowMidSmear).
+    void setLowMidSmear (float octaves) { fdn.setLowMidSmear (octaves); }
+
     void configure (float decaySeconds, float lowMult, float highMult, float mod, float size, bool freeze)
     {
         std::array<float, kLines> ms {}, ap {};

@@ -19,7 +19,7 @@ namespace
         { "Blossom",   "A tail that slowly grows denser after the attack",      "Length",     "Feedback" },
         { "Haze",      "A huge, diffuse ambient wash with no clear echoes",     "Diffusion",  "Smear" },
         { "Aurora",    "Endless, slowly shifting wash for pads and ambient sound (after Cloud Seed)", "Size", "Diffusion" },
-        { "Halo",      "Octave-up shimmer from pitch-shifted feedback",         "Interval",   "Shimmer" },
+        { "Halo",      "Rising shimmer wash (after ShimmerVerb)",              "Interval",   "Shimmer" },
         { "Nebula",    "A velvet-noise wash that is fully dense from the first moment", "Darkness", "Softness" },
         { "Clear Night", "A colourless, evenly tuned hall with no ringing notes", "Size",     "Brightness" },
         { "Space Map", "Early reflections that place a sound in a room",        "Room shape", "Distance" },
@@ -79,7 +79,7 @@ juce::String formatParam1 (int machine, float percent)
         case aurora: return juce::String (juce::roundToInt (30.0f * std::pow (10.0f, p))) + " ms";
         case halo:
         {
-            static const char* intervals[] = { "-12 st", "+5 st", "+7 st", "+12 st", "+19 st" };
+            static const char* intervals[] = { "-12 st", "+7 st", "+12 st", "+12/+7 st", "+12/+19 st" };
             return intervals[std::min (static_cast<int> (p * 5.0f), 4)];
         }
         case clearNight: return juce::String (0.6f + p, 2) + juce::String::fromUTF8 (" \xc3\x97");
