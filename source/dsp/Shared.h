@@ -79,9 +79,10 @@ struct DecaySettings
 // Long tails need more movement. Past about 3 s of decay a static network's tail splits
 // into separate pitches that ring on (worst below 500 Hz, where delay modulation barely
 // reaches), so from 3 s to 8 s of decay, and whenever frozen, the rotation grows to a
-// 90 degree swing, whatever Mod is set to. It keeps its slow rates (0.09 to 0.4 Hz):
-// turning faster smooths the tail further but makes held notes swirl audibly (phasing),
-// which is worse than a little ringing.
+// 90 degree swing, whatever Mod is set to. Jack picked the middle setting by ear: the
+// rotation turns up to twice its slow rates (0.09 to 0.4 Hz, so at most 0.8 Hz) and the
+// delays drift by up to 1 ms. Much faster turning makes held notes swirl (phasing);
+// slower lets low notes ring.
 template <std::size_t N>
 class Fdn
 {
@@ -111,6 +112,7 @@ public:
         inputGain.prepare (fs, 50.0f);
         modDepth.prepare (fs, 50.0f);
         rotation.prepare (fs, 50.0f);
+        tailDepth.prepare (fs, 50.0f);
         for (std::size_t k = 0; k < N / 2; ++k)
         {
             // 0.09 to about 0.4 Hz, spread so no two pairs line up.
@@ -136,6 +138,7 @@ public:
         inputGain.snapTo (inputGain.getTarget());
         modDepth.snapTo (modDepth.getTarget());
         rotation.snapTo (rotation.getTarget());
+        tailDepth.snapTo (tailDepth.getTarget());
         for (std::size_t k = 0; k < N / 2; ++k)
         {
             rotPhase[k] = 0.37f * static_cast<float> (k);
@@ -234,7 +237,7 @@ private:
     template <typename Inject, typename Tap, typename LineHook>
     void step (Inject&& inject, Tap&& tap, LineHook&& hook) noexcept
     {
-        const float depth = modDepth.next();
+        const float depth = std::max (modDepth.next(), tailDepth.next());
         const float in = inputGain.next();
         std::array<float, N> y {};
         for (std::size_t i = 0; i < N; ++i)
@@ -303,7 +306,7 @@ private:
             const float amount = rotation.skip (static_cast<int> (kRotationBlock)) * kMaxRotation;
             for (std::size_t k = 0; k < H; ++k)
             {
-                rotPhase[k] += rotStep[k];
+                rotPhase[k] += rotStep[k] * rotRate;
                 if (rotPhase[k] >= 1.0f) rotPhase[k] -= 1.0f;
                 const float angle = amount * std::sin (6.28318531f * rotPhase[k]);
                 const float inv = 1.0f / static_cast<float> (kRotationBlock);
@@ -334,6 +337,8 @@ private:
         const float t = frozen ? 1.0f : std::clamp ((rt - kTailStart) / (kTailFull - kTailStart), 0.0f, 1.0f);
         const float tail = t * t * (3.0f - 2.0f * t);
         rotation.setTarget (std::max (modAmount, tail) * (1.0f + tail));
+        rotRate = 1.0f + (kTailRate - 1.0f) * tail;
+        tailDepth.setTarget (tail * msToSamples (kTailDriftMs, fs));
     }
 
     void updateGains()
@@ -368,8 +373,9 @@ private:
     std::array<Smoother, N> delays, gLow, gMid, gHigh;
     std::array<Lfo, N> lfos;
     std::array<float, N> signs {};
-    Smoother inputGain, modDepth, rotation;
-    float modAmount = 0.0f;
+    Smoother inputGain, modDepth, rotation, tailDepth;
+    float modAmount = 0.0f, rotRate = 1.0f;
+    static constexpr float kTailRate = 2.0f, kTailDriftMs = 1.0f; // "Middle" long-tail movement
     static constexpr float kTailStart = 3.0f, kTailFull = 8.0f; // seconds of decay
     const std::array<float, N * N>* matrix = nullptr;
     std::array<float, N / 2> rotCos {}, rotSin {}, rotCosStep {}, rotSinStep {}, rotPhase {}, rotStep {};
@@ -565,8 +571,20 @@ private:
     float att = 0.0f, rel = 0.0f, env = 0.0f;
 };
 
-// Two-head granular pitch shifter with complementary sin^2 windows (the gains always sum
-// to one). Placed inside a feedback loop it keeps loop gain at or below one.
+// Two-head granular pitch shifter. Each head reads the delay line through a grain window,
+// and the two heads are half a grain apart, so one fades in as the other fades out.
+//
+// Window: the Vorbis power-complementary window, w = sin(pi/2 * sin^2(pi * phase)). It
+// starts and ends with zero slope (no corners, so no clicks or buzz at grain edges), and
+// the two heads' windows satisfy w1^2 + w2^2 = 1 exactly.
+//
+// Overlap-add gain: what the heads read is usually unrelated (a reverb tail half a grain
+// apart), and then w1^2 + w2^2 = 1 keeps the level steady. When they read the same thing
+// (a held sine, a frozen chord) the amplitudes add instead, which would bulge by up to
+// 3 dB mid-crossfade. So the shifter tracks how alike the two heads are (their
+// correlation, 0 to 1) and divides by the true output level, sqrt(1 + 2 r w1 w2). Either
+// way the output level matches the input with no flutter at the grain rate, and inside a
+// feedback loop it never adds gain.
 class PitchShifter
 {
 public:
@@ -574,9 +592,16 @@ public:
     {
         window = msToSamples (windowMs, sampleRate);
         line.prepare (static_cast<std::size_t> (window) + 16);
+        // Correlation is averaged over about one grain.
+        corrCoeff = 1.0f - std::exp (-1.0f / window);
     }
 
-    void reset() { line.reset(); phase = 0.0f; }
+    void reset()
+    {
+        line.reset();
+        phase = 0.0f;
+        eAA = eBB = eAB = 0.0f;
+    }
 
     void setRatio (float r) noexcept { step = (1.0f - r) / window; }
 
@@ -586,10 +611,18 @@ public:
         phase += step;
         phase -= std::floor (phase);
         const float p2 = phase + 0.5f >= 1.0f ? phase - 0.5f : phase + 0.5f;
-        const float w1 = std::sin (std::numbers::pi_v<float> * phase);
-        const float w2 = std::sin (std::numbers::pi_v<float> * p2);
-        return w1 * w1 * line.readFractional (3.0f + phase * window)
-             + w2 * w2 * line.readFractional (3.0f + p2 * window);
+        const float a = line.readFractional (3.0f + phase * window);
+        const float b = line.readFractional (3.0f + p2 * window);
+
+        const float s = std::sin (std::numbers::pi_v<float> * phase);
+        const float u = 0.5f * std::numbers::pi_v<float> * s * s;
+        const float w1 = std::sin (u), w2 = std::cos (u);
+
+        eAA += corrCoeff * (a * a - eAA);
+        eBB += corrCoeff * (b * b - eBB);
+        eAB += corrCoeff * (a * b - eAB);
+        const float r = std::clamp (eAB / std::sqrt (eAA * eBB + 1.0e-20f), 0.0f, 1.0f);
+        return (w1 * a + w2 * b) / std::sqrt (1.0f + 2.0f * r * w1 * w2);
     }
 
 private:
@@ -597,6 +630,8 @@ private:
     float window = 2400.0f;
     float phase = 0.0f;
     float step = 0.0f;
+    float corrCoeff = 0.001f;
+    float eAA = 0.0f, eBB = 0.0f, eAB = 0.0f;
 };
 
 } // namespace overcast::dsp

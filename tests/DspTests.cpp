@@ -2,7 +2,11 @@
 #include "dsp/Shared.h"
 #include "dsp/machines/ColourlessTuning.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <limits>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -108,4 +112,70 @@ TEST_CASE ("Biquad low cut removes DC")
     for (int i = 0; i < 48000; ++i)
         y = hp.process (1.0f);
     CHECK (std::abs (y) < 1e-4f);
+}
+
+namespace
+{
+    // Output level relative to input (dB) of a pitch shifter in 20 ms slices, once settled.
+    std::vector<float> shifterSliceLevels (float ratio, bool noise)
+    {
+        constexpr double fs = 48000.0;
+        PitchShifter ps;
+        ps.prepare (fs, 61.0f);
+        ps.setRatio (ratio);
+        OnePoleLowpass lp;
+        const float lpA = OnePoleLowpass::coefficientFor (6000.0f, fs); // like a reverb tail
+        std::uint32_t seed = 12345;
+        // For the sine, pick a pitch where the two heads (half a grain apart) read in step,
+        // the case where power windows alone would bulge.
+        const double lag = 0.5 * 61.0 * 0.001 * fs;
+        const double hz = 4.0 * fs / lag;
+        std::vector<float> levels;
+        double outAcc = 0.0, inAcc = 0.0;
+        const int slice = 960;
+        for (int i = 0; i < 10 * 48000; ++i)
+        {
+            float x;
+            if (noise)
+            {
+                seed = seed * 1664525u + 1013904223u;
+                x = lp.process (static_cast<float> (seed >> 8) / 8388608.0f - 1.0f, lpA);
+            }
+            else
+                x = static_cast<float> (std::sin (2.0 * 3.14159265358979 * hz * i / fs));
+            const float y = ps.process (x);
+            outAcc += static_cast<double> (y) * y;
+            inAcc += static_cast<double> (x) * x;
+            if ((i + 1) % slice == 0)
+            {
+                if (i > 48000)
+                    levels.push_back (static_cast<float> (10.0 * std::log10 (outAcc / inAcc)));
+                outAcc = inAcc = 0.0;
+            }
+        }
+        return levels;
+    }
+}
+
+TEST_CASE ("Pitch shifter keeps a steady level, whether its heads are alike or not")
+{
+    for (float ratio : { 0.5f, 1.33484f, 1.49831f, 2.0f, 2.99661f })
+    {
+        CAPTURE (ratio);
+        // Noise: the heads read unrelated sound, so the power windows must sum to one.
+        // (The old sin^2 windows lost 1.8 dB on average and dipped up to 4 dB.)
+        const auto n = shifterSliceLevels (ratio, true);
+        const auto [nMin, nMax] = std::minmax_element (n.begin(), n.end());
+        double mean = 0.0;
+        for (float v : n) mean += v;
+        mean /= static_cast<double> (n.size());
+        CHECK (std::abs (mean) < 1.0);
+        CHECK (*nMax - *nMin < 2.2f);
+
+        // A sine the heads read in step: amplitudes add, and must not bulge.
+        const auto s = shifterSliceLevels (ratio, false);
+        const auto [sMin, sMax] = std::minmax_element (s.begin(), s.end());
+        CHECK (*sMax < 0.75f);
+        CHECK (*sMin > -1.0f);
+    }
 }

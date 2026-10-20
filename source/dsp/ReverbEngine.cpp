@@ -1,5 +1,8 @@
 #include "ReverbEngine.h"
 
+#include <cmath>
+#include <numbers>
+
 namespace overcast::dsp
 {
 
@@ -9,6 +12,14 @@ namespace
     constexpr float kToneMaxDb = 6.0f;
     constexpr float kSilence = 1.0e-5f;     // -100 dBFS: a spilling tail below this is finished
     constexpr float kSilenceHoldSeconds = 0.3f;
+
+    // Equal-power fade curve: 0 to 1 as the fade position t goes 0 to 1.
+    inline float equalPowerGain (float t) noexcept
+    {
+        if (t >= 1.0f) return 1.0f;
+        if (t <= 0.0f) return 0.0f;
+        return std::sin (0.5f * std::numbers::pi_v<float> * t);
+    }
 }
 
 ReverbEngine::ReverbEngine()
@@ -170,13 +181,16 @@ void ReverbEngine::process (float* left, float* right, int numSamples)
         current.process (preL.data(), preR.data(), wetL.data(), wetR.data(), n);
         const float* dryEnv = current.dryEnvelope();
 
-        // Level-match the machine, and fade it in over 30 ms after a switch.
+        // Level-match the machine, and fade it in over 30 ms after a switch. The two machines'
+        // tails are unrelated sounds, so the fades are equal-power (sine and cosine): their
+        // levels add to a steady total, with no 3 dB dip halfway as a straight fade has.
         const float trimActive = kMachineTrim[active];
         for (std::size_t i = 0; i < un; ++i)
         {
             fadeIn = std::min (1.0f, fadeIn + fadeStep);
-            wetL[i] *= trimActive * fadeIn;
-            wetR[i] *= trimActive * fadeIn;
+            const float g = trimActive * equalPowerGain (fadeIn);
+            wetL[i] *= g;
+            wetR[i] *= g;
         }
 
         // The outgoing machine: fed silence, it either rings out (spillover) or fades in 30 ms.
@@ -190,8 +204,9 @@ void ReverbEngine::process (float* left, float* right, int numSamples)
             {
                 if (! previousSpills)
                     fadeOut = std::max (0.0f, fadeOut - fadeStep);
-                wetL[i] += fadeOut * trim * oldL[i];
-                wetR[i] += fadeOut * trim * oldR[i];
+                const float g = trim * equalPowerGain (fadeOut);
+                wetL[i] += g * oldL[i];
+                wetR[i] += g * oldR[i];
                 peak = std::max ({ peak, std::abs (oldL[i]), std::abs (oldR[i]) });
             }
             quietSamples = peak * fadeOut < kSilence ? quietSamples + n : 0;

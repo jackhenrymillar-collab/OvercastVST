@@ -61,9 +61,9 @@ public:
         const float s = p.freeze ? 0.0f : std::clamp (p.param2, 0.0f, 1.0f);
         amount.setTarget (s);
 
-        // Average energy kept per pass: 6 plain lines, 2 blended lines (the shifter's two
-        // heads also lose about a quarter of the energy of what passes through them).
-        const float blended = (1.0f - s) * (1.0f - s) + 0.75f * s * s;
+        // Average energy kept per pass: 6 plain lines, 2 blended lines (the shifter keeps
+        // the level of what passes through it, and its output is unrelated to the dry line).
+        const float blended = (1.0f - s) * (1.0f - s) + s * s;
         const float kept = (6.0f + 2.0f * blended) / 8.0f;
         const float largestLineGain = decayGain (msToSamples (kDelays.front() + kLoopAllpass.front(), fs),
                                                  std::max ({ d.rtLow, d.rtMid, d.rtHigh }), fs);
