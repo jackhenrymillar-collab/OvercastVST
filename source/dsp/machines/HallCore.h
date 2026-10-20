@@ -25,7 +25,7 @@ public:
     void reset() { diffL.reset(); diffR.reset(); fdn.reset(); }
 
     // Extra long-tail movement for this machine (see Fdn::setTailMovement).
-    void setTailMovement (float amount) { fdn.setTailMovement (amount); }
+    void setTailMovement (float amount, bool capDrift = true) { fdn.setTailMovement (amount, capDrift); }
 
     void configure (float decaySeconds, float lowMult, float highMult, float mod, float size, bool freeze)
     {

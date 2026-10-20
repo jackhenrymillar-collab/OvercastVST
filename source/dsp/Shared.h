@@ -210,10 +210,12 @@ public:
 
     // Scales the extra movement long tails get (the faster rotation and the delay drift
     // from 3 s to 8 s of decay). 1 is the "Middle" setting; machines whose long tails
-    // still ring ask for a little more.
-    void setTailMovement (float amount)
+    // still ring ask for a little more. capDrift false keeps the full delay drift instead of
+    // capping it at kMaxTailCents (Arena: Jack preferred it uncapped by ear).
+    void setTailMovement (float amount, bool capDrift = true)
     {
         tailMovement = std::max (0.0f, amount);
+        driftCapped = capDrift;
         updateRotation();
     }
 
@@ -365,7 +367,7 @@ private:
         // Delay drift bends pitch, so it is capped at kMaxTailCents on the fastest line; any
         // movement asked for beyond that goes into the rotation instead, which doesn't.
         const float wantMs = tail * kTailDriftMs * tailMovement;
-        const float driftMs = std::min ({ wantMs, maxTailDriftMs, kMaxModMs });
+        const float driftMs = std::min ({ wantMs, driftCapped ? maxTailDriftMs : kMaxModMs, kMaxModMs });
         const float extra = wantMs > driftMs ? wantMs / driftMs : 1.0f;
         rotRate = (1.0f + (kTailRate - 1.0f) * tail * tailMovement) * extra;
         tailDepth.setTarget (msToSamples (driftMs, fs));
@@ -415,6 +417,7 @@ private:
     // 3.08 over Chamber, Arena, Rise and Halo), with less pitch bend.
     static constexpr float kMaxTailCents = 8.0f;
     float maxTailDriftMs = 1.27f;
+    bool driftCapped = true;
     static constexpr float kTailStart = 3.0f, kTailFull = 8.0f; // seconds of decay
     const std::array<float, N * N>* matrix = nullptr;
     std::array<float, N / 2> rotCos {}, rotSin {}, rotCosStep {}, rotSinStep {}, rotPhase {}, rotStep {};
