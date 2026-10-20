@@ -354,6 +354,54 @@ inline float loopGuard (float x) noexcept
     return std::copysign (kThreshold + kRange * std::tanh ((ax - kThreshold) / kRange), x);
 }
 
+// Allpass whose centre slowly sweeps up and down around a band (second order, RBJ). Inside
+// a feedback loop it moves that band's resonant modes back and forth without changing the
+// level or touching the pitch of anything outside the band, which smears low-mid ringing
+// that delay modulation is too slow to reach. Depth is in octaves either side.
+class SweptAllpass
+{
+public:
+    void prepare (double sampleRate, float centreHz, float rateHz, float startPhase, float q = 0.7f)
+    {
+        fs = static_cast<float> (sampleRate);
+        centre = centreHz;
+        qInv = 0.5f / q;
+        step = static_cast<float> (kBlock) * rateHz / fs;
+        phase = startPhase - std::floor (startPhase);
+        counter = 0;
+        reset();
+    }
+    void reset() noexcept { z1 = z2 = 0.0f; }
+    void setDepth (float octaves) noexcept { depth = std::max (0.0f, octaves); }
+
+    float process (float x) noexcept
+    {
+        if (counter == 0)
+        {
+            counter = kBlock;
+            phase += step;
+            if (phase >= 1.0f) phase -= 1.0f;
+            const float f0 = centre * std::exp2 (depth * std::sin (2.0f * std::numbers::pi_v<float> * phase));
+            const float w0 = 2.0f * std::numbers::pi_v<float> * f0 / fs;
+            const float alpha = std::sin (w0) * qInv;
+            b0 = (1.0f - alpha) / (1.0f + alpha);
+            b1 = -2.0f * std::cos (w0) / (1.0f + alpha);
+        }
+        --counter;
+        // Transposed direct form II; an allpass has b2 = 1, a1 = b1 and a2 = b0.
+        const float y = b0 * x + z1;
+        z1 = b1 * (x - y) + z2;
+        z2 = x - b0 * y;
+        return y;
+    }
+
+private:
+    static constexpr int kBlock = 16;
+    float fs = 48000.0f, centre = 324.0f, qInv = 0.714f, step = 0.0f, phase = 0.0f, depth = 0.0f;
+    float b0 = 0.0f, b1 = 0.0f, z1 = 0.0f, z2 = 0.0f;
+    int counter = 0;
+};
+
 // Stereo-linked lookahead peak limiter. Below the ceiling it passes the signal unchanged
 // (just delayed by the lookahead). Above it, the gain dips smoothly before the peak
 // arrives and recovers over the release time, so loud input is turned down rather than

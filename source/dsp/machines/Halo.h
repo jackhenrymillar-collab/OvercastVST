@@ -157,6 +157,8 @@ public:
         // modes, so this core needs more than the others: ringing score 9.4 at 1x, 5.9 at
         // 2x, 4.6 at 3x (sparse piano, 9 s, octave up).
         fdn.setTailMovement (3.0f);
+        // Swept low-mid allpass in long tails: 150 to 700 Hz resonance 1.73 -> 1.45 (click, 9 s).
+        fdn.setLowMidSmear (1.5f);
         fdn.setFreeze (p.freeze);
 
         const auto& v = kVoicings[std::min<std::size_t> (static_cast<std::size_t> (std::clamp (p.param1, 0.0f, 1.0f) * 5.0f), 4)];

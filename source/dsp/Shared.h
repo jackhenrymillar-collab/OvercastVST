@@ -100,6 +100,8 @@ public:
             gLow[i].prepare (fs, 30.0f);
             gMid[i].prepare (fs, 30.0f);
             gHigh[i].prepare (fs, 30.0f);
+            smear[i].prepare (fs, 324.0f, 0.07f + 0.023f * static_cast<float> (i) * (16.0f / static_cast<float> (N)),
+                              static_cast<float> ((i * 5) % N) / static_cast<float> (N));
             lfos[i].prepare (fs);
             lfos[i].setPhase (static_cast<float> (i) / static_cast<float> (N));
             lfos[i].setFrequency (0.11f + 0.07f * static_cast<float> (i));
@@ -141,6 +143,7 @@ public:
             loopAllpass[i].reset();
             loopAllpassDelay[i].snapTo (loopAllpassDelay[i].getTarget());
             decay[i].reset();
+            smear[i].reset();
             delays[i].snapTo (delays[i].getTarget());
             gLow[i].snapTo (gLow[i].getTarget());
             gMid[i].snapTo (gMid[i].getTarget());
@@ -219,6 +222,14 @@ public:
         updateRotation();
     }
 
+    // Low-mid smear: a slowly swept allpass in every line, centred on 150 to 700 Hz, whose
+    // sweep (in octaves either side) is reached in long tails. 0 leaves it out.
+    void setLowMidSmear (float octaves)
+    {
+        smearOctaves = std::max (0.0f, octaves);
+        updateSmear();
+    }
+
     void setFreeze (bool f)
     {
         frozen = f;
@@ -273,6 +284,8 @@ private:
             y[i] = lines[i].readFractional (d);
             tap (i, y[i]);
             float v = decay[i].process (y[i], aLow, aHigh, gLow[i].next(), gMid[i].next(), gHigh[i].next());
+            if (smearOn)
+                v = smear[i].process (v);
             if (loopAllpassGain > 0.0f)
             {
                 // The length glides when the size changes (a jump would click); once
@@ -371,6 +384,7 @@ private:
         const float extra = wantMs > driftMs ? wantMs / driftMs : 1.0f;
         rotRate = (1.0f + (kTailRate - 1.0f) * tail * tailMovement) * extra;
         tailDepth.setTarget (msToSamples (driftMs, fs));
+        updateSmear();
     }
 
     void updateGains()
@@ -402,6 +416,17 @@ private:
     std::array<Smoother, N> loopAllpassDelay;
     float loopAllpassGain = 0.0f;
     std::array<ThreeBandDecay, N> decay;
+    std::array<SweptAllpass, N> smear;
+    float smearOctaves = 0.0f;
+    bool smearOn = false;
+    void updateSmear() noexcept
+    {
+        const float rt = decaySettings.rtMid;
+        const float t = frozen ? 1.0f : std::clamp ((rt - kTailStart) / (kTailFull - kTailStart), 0.0f, 1.0f);
+        const float oct = smearOctaves;
+        smearOn = oct > 0.0f;
+        for (auto& a : smear) a.setDepth (oct * t * t * (3.0f - 2.0f * t));
+    }
     std::array<Smoother, N> delays, gLow, gMid, gHigh;
     std::array<Lfo, N> lfos;
     std::array<DriftLfo, N> drifts;

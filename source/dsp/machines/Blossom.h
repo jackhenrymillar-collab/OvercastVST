@@ -16,6 +16,8 @@ public:
     {
         fs = sampleRate;
         core.prepare (fs);
+        // Swept low-mid allpass in long tails: 150 to 700 Hz resonance 1.57 -> 1.28 (click, 9 s).
+        core.setLowMidSmear (1.0f);
         for (auto* l : { &loopL, &loopR })
             l->prepare (static_cast<std::size_t> (msToSamples (345.0f, fs)) + 8);
         diffL.prepare (fs, { 2.3f, 3.7f, 5.3f, 6.7f, 8.1f, 9.7f });

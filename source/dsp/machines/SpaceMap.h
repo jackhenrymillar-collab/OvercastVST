@@ -76,6 +76,9 @@ public:
         d.rtHigh = p.decaySeconds * 0.5f;
         fdn.setDecay (d);
         fdn.setModulation (p.mod * 0.4f);
+        // Swept low-mid allpass in long tails: 150 to 700 Hz resonance 2.08 -> 1.53 (click,
+        // 9 s). Growing the network instead also helped but made sparse piano ring more.
+        fdn.setLowMidSmear (0.3f);
         fdn.setRandomDrift (true); // measured: Space Map's long tails ring less with it
         fdn.setFreeze (p.freeze);
     }

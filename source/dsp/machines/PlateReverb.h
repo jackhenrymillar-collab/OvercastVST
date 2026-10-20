@@ -58,6 +58,8 @@ private:
     // Smoothed per-sample controls.
     Smoother decayGain, damping, lowCut, modDepth, inputGain, tailTurn;
     float turnRate = 1.0f;
+    SweptAllpass smearL, smearR;
+    float tail = 0.0f;
 
     float feedbackL = 0.0f, feedbackR = 0.0f;
     float junctionPhase = 0.0f, middlePhase = 0.0f;
