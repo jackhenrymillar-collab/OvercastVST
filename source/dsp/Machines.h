@@ -57,7 +57,7 @@ inline constexpr float kMachineTrim[kNumMachines] = {
     0.771f, // Rise
     0.686f, // Blossom
     0.839f, // Haze
-    1.184f, // Aurora
+    0.893f, // Aurora
     0.893f, // Halo
     1.979f, // Nebula
     0.990f, // Clear Night

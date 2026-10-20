@@ -85,7 +85,7 @@ public:
                     v = y;
                 }
                 const float d = sp.line.read (static_cast<std::size_t> (msToSamples (kSpringMs[s], fs)));
-                sp.line.push (v);
+                sp.line.push (loopGuard (v));
                 sp.fb = sp.dc.process (sp.damp.process (d, damp));
                 outL += sg * kPanL[s] * d;
                 outR += sg * kPanR[s] * d;

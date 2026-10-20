@@ -1,4 +1,8 @@
 #include "dsp/Blocks.h"
+#include "dsp/Shared.h"
+#include "dsp/machines/ColourlessTuning.h"
+
+#include <limits>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -47,6 +51,42 @@ TEST_CASE ("Soft limiter is transparent below threshold and bounded above")
     CHECK (softLimit (10.0f) <= 1.0f);
     CHECK (softLimit (-10.0f) >= -1.0f);
     CHECK (softLimit (0.95f) < 0.95f);
+}
+
+TEST_CASE ("Loop guard is transparent in normal use, caps runaways and drops NaN")
+{
+    CHECK (loopGuard (0.5f) == 0.5f);
+    CHECK (loopGuard (-30.0f) == -30.0f);
+    CHECK (loopGuard (64.0f) == 64.0f);
+    CHECK (loopGuard (1.0e6f) <= 128.0f);
+    CHECK (loopGuard (-1.0e6f) >= -128.0f);
+    CHECK (loopGuard (std::numeric_limits<float>::infinity()) == 0.0f);
+    CHECK (loopGuard (std::numeric_limits<float>::quiet_NaN()) == 0.0f);
+}
+
+TEST_CASE ("Feedback matrices are orthogonal, so they never add gain")
+{
+    // Hadamard: transform each unit vector and check the columns are orthonormal.
+    std::array<std::array<float, 16>, 16> h {};
+    for (std::size_t i = 0; i < 16; ++i)
+    {
+        h[i][i] = 1.0f;
+        hadamard (h[i]);
+    }
+    const auto& a = ColourlessTuning::matrix;
+    for (std::size_t i = 0; i < 16; ++i)
+        for (std::size_t j = 0; j < 16; ++j)
+        {
+            double dh = 0.0, dc = 0.0;
+            for (std::size_t k = 0; k < 16; ++k)
+            {
+                dh += static_cast<double> (h[i][k]) * h[j][k];
+                dc += static_cast<double> (a[k * 16 + i]) * a[k * 16 + j]; // (A^T A)_ij
+            }
+            const double want = i == j ? 1.0 : 0.0;
+            CHECK (dh == Approx (want).margin (1e-6));
+            CHECK (dc == Approx (want).margin (1e-5));
+        }
 }
 
 TEST_CASE ("Smoother converges to its target")

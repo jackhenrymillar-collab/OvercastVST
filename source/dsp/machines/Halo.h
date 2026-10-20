@@ -21,8 +21,8 @@ public:
     void prepare (double sampleRate, int) override
     {
         fs = sampleRate;
-        diffL.prepare (fs, { 4.7f, 3.6f, 12.7f, 9.3f });
-        diffR.prepare (fs, { 5.3f, 3.1f, 11.9f, 9.9f });
+        diffL.prepare (fs, { 1.3f, 2.1f, 3.1f, 4.3f, 6.1f, 8.3f });
+        diffR.prepare (fs, { 1.5f, 2.3f, 2.9f, 4.7f, 5.9f, 8.9f });
         fdn.prepare (fs, kDelays.back());
         fdn.setDelays (kDelays);
         fdn.setLoopAllpasses (kLoopAllpass, 0.6f);
@@ -90,14 +90,15 @@ public:
 
 private:
     // Long lines: fewer passes per second means the shimmer tail lasts longer.
-    static constexpr std::array<float, 8> kDelays { 61.3f, 71.9f, 79.1f, 89.3f, 97.7f, 107.9f, 119.3f, 131.7f };
+    // Prime sample counts at 48 kHz, with no two lines near a 2:1, 3:2 or 4:3 ratio.
+    static constexpr std::array<float, 8> kDelays { 61.2292f, 71.8542f, 79.1042f, 89.3542f, 97.7292f, 108.5208f, 119.6458f, 131.7292f };
     // With so few, long lines the echoes are far apart and repeat audibly when Mod is
     // low; an allpass in each loop fills the gaps between them.
     static constexpr std::array<float, 8> kLoopAllpass { 3.31f, 7.13f, 4.57f, 6.29f, 2.83f, 5.47f, 7.61f, 3.97f };
     static constexpr std::array<float, 5> kRatios { 0.5f, 1.33484f, 1.49831f, 2.0f, 2.99661f };
 
     double fs = 48000.0;
-    Diffuser<4> diffL, diffR;
+    Diffuser<6> diffL, diffR; // short stages (under 10 ms): dense without colouring the sound
     Fdn<8> fdn;
     std::array<PitchShifter, 2> shifters;
     std::array<OnePoleLowpass, 2> tone;

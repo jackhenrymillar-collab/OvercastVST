@@ -5,10 +5,11 @@ namespace overcast::dsp
 
 namespace
 {
-    // Delay lengths from Dattorro's paper, in samples at his 29761 Hz reference rate.
-    constexpr int kInputDiffusers[4] = { 142, 107, 379, 277 };
+    // Delay lengths from Dattorro's paper, in samples at his 29761 Hz reference rate. The two
+    // longer input diffusers are shortened to under 10 ms (Dattorro: 379 and 277 samples).
+    constexpr int kInputDiffusers[4] = { 142, 107, 293, 227 };
     // Slightly different lengths for the right input chain, so L and R decorrelate.
-    constexpr int kInputDiffusersAlt[4] = { 151, 113, 367, 289 };
+    constexpr int kInputDiffusersAlt[4] = { 151, 113, 281, 239 };
     constexpr float kInputDiffusion1 = 0.75f;
     constexpr float kInputDiffusion2 = 0.625f;
 
@@ -29,6 +30,11 @@ namespace
 
     constexpr float kOutputGain = 0.6f;
     constexpr float kLfoRateHz = 0.9f;
+
+    // Long tails: two slowly turning rotations mix the tank's halves (see process()).
+    constexpr float kTailStart = 3.0f, kTailFull = 8.0f;   // seconds of decay
+    constexpr float kMaxTurn = 1.5707963f;                  // 90 degrees
+    constexpr float kJunctionHz = 0.31f, kMiddleHz = 0.43f;
 }
 
 std::size_t PlateReverb::scaled (int samplesAt29761) const noexcept
@@ -70,7 +76,7 @@ void PlateReverb::prepare (double sampleRate, int /*maxBlockSize*/)
     lfoL.prepare (sampleRate); lfoR.prepare (sampleRate);
     lfoL.setFrequency (kLfoRateHz); lfoR.setFrequency (kLfoRateHz * 1.07f);
 
-    for (auto* s : { &decayGain, &damping, &lowCut, &modDepth })
+    for (auto* s : { &decayGain, &damping, &lowCut, &modDepth, &tailTurn })
         s->prepare (sampleRate, 30.0f);
     inputGain.prepare (sampleRate, 50.0f);
 
@@ -91,6 +97,7 @@ void PlateReverb::reset()
     allpass2L.reset(); allpass2R.reset();
     delay2L.reset(); delay2R.reset();
     lfoL.setPhase (0.0f); lfoR.setPhase (0.25f);
+    junctionPhase = 0.0f; middlePhase = 0.3f;
     feedbackL = feedbackR = 0.0f;
 
     setParams (current);
@@ -99,6 +106,7 @@ void PlateReverb::reset()
     lowCut.snapTo (lowCut.getTarget());
     modDepth.snapTo (modDepth.getTarget());
     inputGain.snapTo (inputGain.getTarget());
+    tailTurn.snapTo (tailTurn.getTarget());
 }
 
 float PlateReverb::decayGainFor (float rt60Seconds) const noexcept
@@ -127,6 +135,9 @@ void PlateReverb::setParams (const MachineParams& p)
 
     modDepth.setTarget (std::clamp (p.mod, 0.0f, 1.0f) * 2.0f * modExcursion);
     inputGain.setTarget (1.0f - fz);
+
+    const float t = p.freeze ? 1.0f : std::clamp ((p.decaySeconds - kTailStart) / (kTailFull - kTailStart), 0.0f, 1.0f);
+    tailTurn.setTarget (kMaxTurn * t * t * (3.0f - 2.0f * t));
 }
 
 void PlateReverb::process (const float* inL, const float* inR, float* wetL, float* wetR, int numSamples)
@@ -140,6 +151,7 @@ void PlateReverb::process (const float* inL, const float* inR, float* wetL, floa
         const float lowMix = lowCut.next();
         const float depth = modDepth.next();
         const float inGain = inputGain.next();
+        const float turn = tailTurn.next();
 
         // Input diffusion, one chain per channel.
         float xL = bandwidth[0].process (inL[n] * inGain, bwCoeff);
@@ -161,9 +173,6 @@ void PlateReverb::process (const float* inL, const float* inR, float* wetL, floa
         float lt = dampL.process (l1, damp);
         lt -= lowMix * lowL.process (lt, 1.0f - lowMix);
         lt *= g;
-        lt = allpass2L.process (lt, ap2L, kDecayDiffusion2);
-        const float l2 = delay2L.read (d2L);
-        delay2L.push (lt);
 
         // Right half of the tank (fed by the left half's output).
         float r = xR + feedbackL;
@@ -173,12 +182,36 @@ void PlateReverb::process (const float* inL, const float* inR, float* wetL, floa
         float rt = dampR.process (r1, damp);
         rt -= lowMix * lowR.process (rt, 1.0f - lowMix);
         rt *= g;
+        // Long tails: the classic tank is one fixed loop, and past a few seconds of decay
+        // it rings at separate pitches. Two rotations, one here between the halves and one
+        // where they feed each other, turn back and forth by up to 90 degrees, so the loop
+        // keeps changing shape and the pitches smear into a smooth tail. Rotations are
+        // lossless and don't bend pitch. Short decays (turn = 0) are the classic plate.
+        float middleCos = 1.0f, middleSin = 0.0f, junctionCos = 1.0f, junctionSin = 0.0f;
+        if (turn > 0.0f)
+        {
+            middlePhase += kMiddleHz / static_cast<float> (fs);
+            junctionPhase += kJunctionHz / static_cast<float> (fs);
+            if (middlePhase >= 1.0f) middlePhase -= 1.0f;
+            if (junctionPhase >= 1.0f) junctionPhase -= 1.0f;
+            const float a = turn * std::sin (kTwoPi * middlePhase), b = turn * std::sin (kTwoPi * junctionPhase);
+            middleCos = std::cos (a); middleSin = std::sin (a);
+            junctionCos = std::cos (b); junctionSin = std::sin (b);
+            const float l0 = lt, r0 = rt;
+            lt = middleCos * l0 - middleSin * r0;
+            rt = middleSin * l0 + middleCos * r0;
+        }
+        lt = allpass2L.process (lt, ap2L, kDecayDiffusion2);
+        const float l2 = delay2L.read (d2L);
+        delay2L.push (lt);
         rt = allpass2R.process (rt, ap2R, kDecayDiffusion2);
         const float r2 = delay2R.read (d2R);
         delay2R.push (rt);
 
-        feedbackL = l2 * g;
-        feedbackR = r2 * g;
+        // feedbackL feeds the right half and feedbackR the left; at 90 degrees each half feeds itself.
+        const float a = l2 * g, b = r2 * g;
+        feedbackL = loopGuard (junctionCos * a + junctionSin * b);
+        feedbackR = loopGuard (junctionCos * b - junctionSin * a);
 
         // Output taps (Dattorro table 2), left taps mostly from the right half and vice versa.
         float yL = delay1R.read (taps[0]) + delay1R.read (taps[1]) - allpass2R.tap (taps[2])

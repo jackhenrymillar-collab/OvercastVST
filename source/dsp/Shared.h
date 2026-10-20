@@ -73,7 +73,15 @@ struct DecaySettings
 // each pair of lines (i, i + N/2) is turned by an angle that swings slowly around zero,
 // each pair at its own rate. A rotation is orthogonal at every angle, so the network
 // stays lossless and stable, and the echo pattern keeps changing without bending the
-// pitch of what rings. With Mod at zero the angles are zero: the plain Hadamard network.
+// pitch of what rings. With Mod at zero and a short decay the angles are zero: the plain
+// Hadamard network.
+//
+// Long tails need more movement. Past about 3 s of decay a static network's tail splits
+// into separate pitches that ring on (worst below 500 Hz, where delay modulation barely
+// reaches), so from 3 s to 8 s of decay, and whenever frozen, the rotation grows to a
+// 90 degree swing, whatever Mod is set to. It keeps its slow rates (0.09 to 0.4 Hz):
+// turning faster smooths the tail further but makes held notes swirl audibly (phasing),
+// which is worse than a little ringing.
 template <std::size_t N>
 class Fdn
 {
@@ -151,6 +159,7 @@ public:
         aLow = OnePoleLowpass::coefficientFor (d.lowHz, fs);
         aHigh = OnePoleLowpass::coefficientFor (d.highHz, fs);
         updateGains();
+        updateRotation();
     }
 
     // Optional allpass inside each feedback path. Short networks (small rooms) otherwise
@@ -177,7 +186,8 @@ public:
     {
         const float d = std::clamp (depth, 0.0f, 1.0f);
         modDepth.setTarget (std::clamp (delayShare, 0.0f, 1.0f) * d * msToSamples (kMaxModMs, fs));
-        rotation.setTarget (d);
+        modAmount = d;
+        updateRotation();
     }
 
     void setFreeze (bool f)
@@ -185,6 +195,7 @@ public:
         frozen = f;
         inputGain.setTarget (f ? 0.0f : 1.0f);
         updateGains();
+        updateRotation();
     }
 
     // Optional per-line hook inside the loop (used by Halo for pitch shifting).
@@ -250,7 +261,7 @@ private:
             hadamard (y);
         rotate (y);
         for (std::size_t i = 0; i < N; ++i)
-            lines[i].push (y[i] + in * inject (i));
+            lines[i].push (loopGuard (y[i] + in * inject (i)));
     }
 
 public:
@@ -303,12 +314,26 @@ private:
         --rotCounter;
         for (std::size_t k = 0; k < H; ++k)
         {
-            const float c = rotCos[k] += rotCosStep[k];
-            const float s = rotSin[k] += rotSinStep[k];
+            float c = rotCos[k] += rotCosStep[k];
+            float s = rotSin[k] += rotSinStep[k];
+            // Pull the straight-line step back towards the unit circle. (3 - r^2) / 2 is one
+            // Newton step for 1 / r, which never overshoots: the pair stays at or inside the
+            // circle, so faster rotations don't shorten the tail and a freeze never grows.
+            const float g = 1.5f - 0.5f * (c * c + s * s);
+            c *= g;
+            s *= g;
             const float u = y[k], v = y[k + H];
             y[k] = c * u - s * v;
             y[k + H] = s * u + c * v;
         }
+    }
+
+    void updateRotation()
+    {
+        const float rt = decaySettings.rtMid;
+        const float t = frozen ? 1.0f : std::clamp ((rt - kTailStart) / (kTailFull - kTailStart), 0.0f, 1.0f);
+        const float tail = t * t * (3.0f - 2.0f * t);
+        rotation.setTarget (std::max (modAmount, tail) * (1.0f + tail));
     }
 
     void updateGains()
@@ -344,6 +369,8 @@ private:
     std::array<Lfo, N> lfos;
     std::array<float, N> signs {};
     Smoother inputGain, modDepth, rotation;
+    float modAmount = 0.0f;
+    static constexpr float kTailStart = 3.0f, kTailFull = 8.0f; // seconds of decay
     const std::array<float, N * N>* matrix = nullptr;
     std::array<float, N / 2> rotCos {}, rotSin {}, rotCosStep {}, rotSinStep {}, rotPhase {}, rotStep {};
     std::size_t rotCounter = 0;

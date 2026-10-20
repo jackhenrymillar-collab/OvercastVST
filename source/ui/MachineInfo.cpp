@@ -18,7 +18,7 @@ namespace
         { "Rise",      "Reverb that swells in behind every note",               "Rise time",  "Swell mode" },
         { "Blossom",   "A tail that slowly grows denser after the attack",      "Length",     "Feedback" },
         { "Haze",      "A huge, diffuse ambient wash with no clear echoes",     "Diffusion",  "Smear" },
-        { "Aurora",    "Thousands of tuned resonators that ring and drift like a glass sky", "Pitch", "Harmony" },
+        { "Aurora",    "Endless, slowly shifting wash for pads and ambient sound (after Cloud Seed)", "Size", "Diffusion" },
         { "Halo",      "Octave-up shimmer from pitch-shifted feedback",         "Interval",   "Shimmer" },
         { "Nebula",    "A velvet-noise wash that is fully dense from the first moment", "Darkness", "Softness" },
         { "Clear Night", "A colourless, evenly tuned hall with no ringing notes", "Size",     "Brightness" },
@@ -76,11 +76,7 @@ juce::String formatParam1 (int machine, float percent)
         case coil:  return juce::String (1 + static_cast<int> (p * 2.999f));
         case rise:  return formatSeconds (0.05f * std::pow (60.0f, p));
         case blossom: return juce::String (juce::roundToInt (40.0f + 260.0f * p)) + " ms";
-        case aurora:
-        {
-            const int st = juce::roundToInt ((p - 0.5f) * 24.0f);
-            return (st > 0 ? "+" : "") + juce::String (st) + " st";
-        }
+        case aurora: return juce::String (juce::roundToInt (30.0f * std::pow (10.0f, p))) + " ms";
         case halo:
         {
             static const char* intervals[] = { "-12 st", "+5 st", "+7 st", "+12 st", "+19 st" };

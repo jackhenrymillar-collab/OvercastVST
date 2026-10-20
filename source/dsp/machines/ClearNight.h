@@ -23,8 +23,8 @@ public:
     void prepare (double sampleRate, int) override
     {
         fs = sampleRate;
-        diffL.prepare (fs, { 3.3f, 5.1f, 7.7f, 11.9f });
-        diffR.prepare (fs, { 3.9f, 4.7f, 8.3f, 12.7f });
+        diffL.prepare (fs, { 1.3f, 2.1f, 3.1f, 4.3f, 6.1f, 8.3f });
+        diffR.prepare (fs, { 1.5f, 2.3f, 2.9f, 4.7f, 5.9f, 8.9f });
         fdn.prepare (fs, ColourlessTuning::delayMs.back() * kMaxSize);
         fdn.setMatrix (&ColourlessTuning::matrix);
         setParams (params);
@@ -85,7 +85,7 @@ private:
     static constexpr float kOutputScale = 2.6f;
 
     double fs = 48000.0;
-    Diffuser<4> diffL, diffR;
+    Diffuser<6> diffL, diffR; // short stages (under 10 ms): dense without colouring the sound
     Fdn<kLines> fdn;
     MachineParams params;
 };

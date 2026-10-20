@@ -13,8 +13,8 @@ class Haze final : public ReverbMachine
 public:
     void prepare (double sampleRate, int) override
     {
-        diffL.prepare (sampleRate, { 8.9f, 12.7f, 16.3f, 21.1f, 26.9f, 31.3f, 37.9f, 43.1f });
-        diffR.prepare (sampleRate, { 9.7f, 13.3f, 17.9f, 20.3f, 25.1f, 32.9f, 36.1f, 44.9f });
+        diffL.prepare (sampleRate, { 1.3f, 1.9f, 2.7f, 3.4f, 4.1f, 4.9f, 5.6f, 6.3f, 7.1f, 7.9f, 8.6f, 9.4f });
+        diffR.prepare (sampleRate, { 1.5f, 2.1f, 2.5f, 3.2f, 4.3f, 4.7f, 5.3f, 6.7f, 7.3f, 8.3f, 8.9f, 9.7f });
         fdn.prepare (sampleRate, kDelays.back());
         fdn.setDelays (kDelays);
         diffusion.prepare (sampleRate, 50.0f);
@@ -56,9 +56,10 @@ public:
     }
 
 private:
-    static constexpr std::array<float, 16> kDelays { 61.3f, 67.9f, 71.3f, 77.9f, 83.3f, 89.9f, 94.1f, 101.3f,
-                                                     107.9f, 113.3f, 119.9f, 127.1f, 133.7f, 139.1f, 146.3f, 153.7f };
-    Diffuser<8> diffL, diffR;
+    // Prime sample counts at 48 kHz, with no two lines near a 2:1, 3:2 or 4:3 ratio.
+    static constexpr std::array<float, 16> kDelays { 61.2292f, 67.8958f, 71.1042f, 77.8958f, 83.3542f, 90.1458f, 94.1042f, 101.2708f,
+                                                     107.8958f, 113.2708f, 119.6458f, 127.1042f, 133.7708f, 139.1458f, 146.2292f, 153.5208f };
+    Diffuser<12> diffL, diffR; // many short stages (under 10 ms) rather than a few long ones
     Fdn<16> fdn;
     Smoother diffusion, smear;
     MachineParams params;

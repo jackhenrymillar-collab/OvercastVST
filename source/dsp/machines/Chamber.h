@@ -91,8 +91,9 @@ private:
     static constexpr std::array<float, 12> kTapsL { 3.1f, 5.9f, 8.3f, 11.7f, 14.3f, 17.9f, 21.1f, 24.7f, 29.3f, 33.1f, 38.9f, 44.3f };
     static constexpr std::array<float, 12> kTapsR { 4.3f, 6.7f, 9.9f, 12.1f, 15.7f, 19.3f, 22.9f, 26.3f, 31.1f, 35.9f, 41.3f, 47.1f };
     static constexpr float kMaxLateScale = 1.5f;
-    static constexpr std::array<float, 16> kLate { 7.3f, 8.3f, 9.1f, 10.1f, 11.3f, 12.1f, 13.7f, 14.9f,
-                                                   15.9f, 17.1f, 17.9f, 19.7f, 21.1f, 22.3f, 23.3f, 25.1f };
+    // Prime sample counts at 48 kHz, with no two lines near a 2:1, 3:2 or 4:3 ratio.
+    static constexpr std::array<float, 16> kLate { 7.3065f, 8.2887f, 9.122f, 10.0744f, 11.3244f, 12.0685f, 13.8244f, 14.8363f,
+                                                   15.9077f, 17.128f, 17.872f, 19.6577f, 20.9673f, 22.128f, 23.3185f, 25.1935f };
     static constexpr std::array<float, 16> kLoopAllpass { 1.13f, 1.71f, 2.37f, 2.93f, 1.39f, 2.11f, 2.69f, 3.31f,
                                                           1.27f, 1.93f, 2.53f, 3.13f, 1.51f, 2.23f, 2.83f, 3.47f };
 

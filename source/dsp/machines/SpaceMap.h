@@ -121,8 +121,9 @@ private:
     }
 
     static constexpr float kMaxLateScale = 1.6f;
-    static constexpr std::array<float, 16> kLate { 13.1f, 14.9f, 17.3f, 18.7f, 19.9f, 21.7f, 23.7f, 25.3f,
-                                                   27.1f, 29.3f, 31.3f, 33.1f, 35.9f, 37.3f, 39.7f, 41.9f };
+    // Prime sample counts at 48 kHz, with no two lines near a 2:1, 3:2 or 4:3 ratio.
+    static constexpr std::array<float, 16> kLate { 13.1458f, 14.9792f, 17.2708f, 18.8958f, 19.8542f, 21.6458f, 23.5208f, 25.3542f,
+                                                   27.1042f, 29.3542f, 31.2292f, 32.9792f, 35.8958f, 37.2708f, 40.2292f, 41.8958f };
     static constexpr std::array<float, 16> kLoopAllpass { 1.13f, 1.71f, 2.37f, 2.93f, 1.39f, 2.11f, 2.69f, 3.31f,
                                                           1.27f, 1.93f, 2.53f, 3.13f, 1.51f, 2.23f, 2.83f, 3.47f };
 
