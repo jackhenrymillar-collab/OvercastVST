@@ -48,6 +48,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::spillover, v }, "Spillover", true));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::killDry, v }, "Kill Dry", false));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::mixLaw, v }, "Mix Law", StringArray { "Equal power", "Pedal" }, 1));
+    // Also the host's bypass switch (see OvercastProcessor::getBypassParameter). Clicking the moon toggles it.
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::bypass, v }, "Bypass", false));
 
     return layout;
 }

@@ -57,8 +57,38 @@ private:
 };
 
 //==============================================================================
+// A round, see-through button over the moon. The sky draws the moon itself; this
+// only adds a faint ring on hover and catches clicks inside the disc.
+class NightSkyPanel::MoonButton final : public juce::Button
+{
+public:
+    MoonButton() : juce::Button ("Bypass")
+    {
+        setTitle ("Bypass");
+        setClickingTogglesState (true);
+        setTooltip ("Click the moon to bypass");
+        setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    }
+
+    bool hitTest (int x, int y) override
+    {
+        const auto c = getLocalBounds().toFloat().getCentre();
+        return c.getDistanceFrom ({ static_cast<float> (x), static_cast<float> (y) }) <= getWidth() * 0.5f;
+    }
+
+    void paintButton (juce::Graphics& g, bool highlighted, bool) override
+    {
+        if (! highlighted && ! hasKeyboardFocus (false))
+            return;
+        g.setColour (Colours::ivory.withAlpha (0.22f));
+        g.drawEllipse (getLocalBounds().toFloat().reduced (1.5f), 1.0f);
+    }
+};
+
+//==============================================================================
 NightSkyPanel::NightSkyPanel (OvercastProcessor& p)
-    : processor (p), presets (p.getPresets()), presetName (std::make_unique<PresetName>())
+    : processor (p), presets (p.getPresets()), presetName (std::make_unique<PresetName>()),
+      moonButton (std::make_unique<MoonButton>())
 {
     setOpaque (true);
     auto& state = processor.getState();
@@ -129,6 +159,12 @@ NightSkyPanel::NightSkyPanel (OvercastProcessor& p)
     highCut.setDoubleClickReturnValue (true, defaultValueOf (state, ParamID::highCut));
     lowCut.formatValue = highCut.formatValue = [] (double v) { return formatFrequency (static_cast<float> (v)); };
 
+    addAndMakeVisible (*moonButton);
+    moonButton->onClick = [this] { bypassAttachment->setValueAsCompleteGesture (moonButton->getToggleState() ? 1.0f : 0.0f); };
+    bypassAttachment = std::make_unique<juce::ParameterAttachment> (
+        *state.getParameter (ParamID::bypass),
+        [this] (float value) { setBypassed (value > 0.5f); });
+
     addChildComponent (saveOverlay);
     saveOverlay.onSave = [this] (const juce::String& name)
     {
@@ -141,6 +177,7 @@ NightSkyPanel::NightSkyPanel (OvercastProcessor& p)
     };
 
     machineAttachment->sendInitialUpdate();
+    bypassAttachment->sendInitialUpdate();
     updatePresetDisplay();
     setSize (kPanelWidth, kPanelHeight);
 }
@@ -160,6 +197,23 @@ void NightSkyPanel::setMachine (int index)
     knobs[param2].setLabel (info.param2Label);
     for (auto& k : knobs)
         k.repaint();
+    repaint();
+}
+
+void NightSkyPanel::setBypassed (bool shouldBypass)
+{
+    bypassed = shouldBypass;
+    moonButton->setToggleState (bypassed, juce::dontSendNotification);
+    moonButton->setTooltip (bypassed ? "Click the moon to turn Overcast back on" : "Click the moon to bypass");
+
+    // Dim the controls while bypassed; they still work.
+    const float alpha = bypassed ? 0.55f : 1.0f;
+    for (auto& b : machineButtons)
+        b->setAlpha (alpha);
+    for (auto& k : knobs)
+        k.setAlpha (alpha);
+    for (auto* c : std::initializer_list<juce::Component*> { &freeze, &spillover, &killDry, &lowCut, &highCut, &mixLaw })
+        c->setAlpha (alpha);
     repaint();
 }
 
@@ -232,9 +286,24 @@ void NightSkyPanel::showPresetMenu()
 
 void NightSkyPanel::frame (double seconds, bool animate)
 {
+    auto& state = processor.getState();
+    auto value = [&state] (const char* id) { return state.getRawParameterValue (id)->load(); };
+
+    ui::NightSky::Inputs in;
+    in.machine = machine;
+    in.bypass = bypassed;
+    in.tone = juce::jlimit (-1.0f, 1.0f, value (ParamID::tone) / 100.0f);
+    in.shimmer = in.feedback = juce::jlimit (0.0f, 1.0f, value (ParamID::param2) / 100.0f);
+    in.freeze = value (ParamID::freeze) > 0.5f;
+
+    const bool changed = in.machine != lastInputs.machine || in.bypass != lastInputs.bypass || in.freeze != lastInputs.freeze
+                      || std::abs (in.tone - lastInputs.tone) > 1.0e-4f || std::abs (in.shimmer - lastInputs.shimmer) > 1.0e-4f;
+    lastInputs = in;
+
     sky.setMotion (animate);
+    sky.setInputs (in);
     sky.advance (seconds);
-    if (animate)
+    if (animate || changed)
         repaint();
 
     // The preset name changes when knobs move or the host loads a session.
@@ -299,6 +368,7 @@ void NightSkyPanel::resized()
         rx -= w + 24.0f;
     }
 
+    moonButton->setBounds (NightSky::moonBounds().toNearestInt());
     saveOverlay.setBounds (getLocalBounds());
 }
 
@@ -336,6 +406,13 @@ void NightSkyPanel::paint (juce::Graphics& g)
                   Colours::gold.withAlpha (0.45f));
     if (freeze.getToggleState())
         drawGlow (g, freeze.getBounds().toFloat(), 20.0f, 16.0f, Colours::ice.withAlpha (0.6f));
+
+    if (bypassed)
+    {
+        const auto moon = NightSky::moonBounds();
+        drawTrackedText (g, "BYPASSED", { moon.getX(), moon.getBottom() + 10.0f, moon.getWidth(), 16.0f },
+                         Fonts::sans (12.0f, false, 0.28f), juce::Justification::centred, Colours::muted);
+    }
 }
 
 //==============================================================================

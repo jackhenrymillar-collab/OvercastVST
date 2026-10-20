@@ -24,6 +24,8 @@ OvercastProcessor::OvercastProcessor()
     killDry  = state.getRawParameterValue (ParamID::killDry);
     spillover = state.getRawParameterValue (ParamID::spillover);
     mixLaw   = state.getRawParameterValue (ParamID::mixLaw);
+    bypass   = state.getRawParameterValue (ParamID::bypass);
+    bypassParam = state.getParameter (ParamID::bypass);
     knobs = { decay, preDelay, mix, tone, mod, param1, param2 };
 
     // Machines start from their factory preset's knobs until you change them.
@@ -162,6 +164,9 @@ void OvercastProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     engine.setParams (readParams());
     engine.prepare (sampleRate, juce::jmax (1, samplesPerBlock));
+    dryCopy.setSize (2, juce::jmax (1, samplesPerBlock));
+    bypassStep = static_cast<float> (1.0 / (0.02 * sampleRate));
+    bypassMix = bypass->load() > 0.5f ? 0.0f : 1.0f;
 }
 
 void OvercastProcessor::reset()
@@ -201,8 +206,40 @@ void OvercastProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     if (getTotalNumInputChannels() == 1 && buffer.getNumChannels() > 1)
         buffer.copyFrom (1, 0, buffer, 0, 0, numSamples);
 
+    const float target = bypass->load() > 0.5f ? 0.0f : 1.0f;
+    if (target < 0.5f && bypassMix <= 0.0f)
+    {
+        // Fully bypassed: the dry signal passes untouched. The reverb hears silence, so
+        // its tail dies away out of earshot and nothing old comes back on un-bypass.
+        dryCopy.setSize (2, numSamples, false, false, true);
+        dryCopy.clear();
+        engine.setParams (readParams());
+        engine.process (dryCopy.getWritePointer (0), dryCopy.getWritePointer (1), numSamples);
+        return;
+    }
+
+    if (juce::exactlyEqual (target, bypassMix))
+    {
+        engine.setParams (readParams());
+        engine.process (buffer.getWritePointer (0), buffer.getWritePointer (1), numSamples);
+        return;
+    }
+
+    // Crossfading in or out of bypass.
+    dryCopy.setSize (2, numSamples, false, false, true);
+    for (int ch = 0; ch < 2; ++ch)
+        dryCopy.copyFrom (ch, 0, buffer, juce::jmin (ch, buffer.getNumChannels() - 1), 0, numSamples);
     engine.setParams (readParams());
     engine.process (buffer.getWritePointer (0), buffer.getWritePointer (1), numSamples);
+    float* out[2] = { buffer.getWritePointer (0), buffer.getWritePointer (1) };
+    float g = bypassMix;
+    for (int i = 0; i < numSamples; ++i)
+    {
+        g = target > g ? juce::jmin (target, g + bypassStep) : juce::jmax (target, g - bypassStep);
+        for (int ch = 0; ch < 2; ++ch)
+            out[ch][i] = dryCopy.getSample (ch, i) + g * (out[ch][i] - dryCopy.getSample (ch, i));
+    }
+    bypassMix = g;
 }
 
 juce::AudioProcessorEditor* OvercastProcessor::createEditor()

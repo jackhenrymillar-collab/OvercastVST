@@ -33,6 +33,7 @@ public:
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 60.0; }
+    juce::AudioProcessorParameter* getBypassParameter() const override { return bypassParam; }
 
     // Hosts see the factory presets as programs.
     int getNumPrograms() override;
@@ -91,6 +92,12 @@ private:
     std::atomic<float>* killDry = nullptr;
     std::atomic<float>* spillover = nullptr;
     std::atomic<float>* mixLaw = nullptr;
+    std::atomic<float>* bypass = nullptr;
+    juce::AudioProcessorParameter* bypassParam = nullptr;
+
+    // Bypass fades between the effect and the dry input over about 20 ms.
+    juce::AudioBuffer<float> dryCopy;
+    float bypassMix = 1.0f, bypassStep = 0.0f; // 1 = effect on, 0 = bypassed
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OvercastProcessor)
 };
