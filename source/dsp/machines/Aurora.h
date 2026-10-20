@@ -269,7 +269,9 @@ private:
     // Seeds from Cloud Seed's Dark Plate program.
     static constexpr std::uint64_t kDelaySeed = 218, kPostDiffusionSeed = 365, kDiffusionSeed = 185;
     static constexpr float kTailStart = 3.0f, kTailFull = 8.0f;     // seconds of decay
-    static constexpr float kTailMod = 0.35f;                        // modulation kept at long decays
+    // Modulation kept at long decays. Raised from 0.35 after Aurora scored 12.9 for ringing
+    // at 12 s (the highest of the delay-network machines); 0.65 brings it to about 5.7.
+    static constexpr float kTailMod = 0.65f;
     static constexpr float kMinRateHz = 0.06f, kRateSpanHz = 0.35f; // Cloud Seed's slow rates
     static constexpr float kLowHz = 250.0f, kHighHz = 3500.0f;
     static constexpr float kLowRatio = 1.1f, kHighRatio = 0.55f;    // band decay times vs Decay

@@ -76,6 +76,7 @@ public:
         d.rtHigh = p.decaySeconds * 0.5f;
         fdn.setDecay (d);
         fdn.setModulation (p.mod * 0.4f);
+        fdn.setRandomDrift (true); // measured: Space Map's long tails ring less with it
         fdn.setFreeze (p.freeze);
     }
 

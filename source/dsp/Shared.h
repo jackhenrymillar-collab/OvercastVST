@@ -101,6 +101,9 @@ public:
             lfos[i].prepare (fs);
             lfos[i].setPhase (static_cast<float> (i) / static_cast<float> (N));
             lfos[i].setFrequency (0.11f + 0.07f * static_cast<float> (i));
+            drifts[i].prepare (fs);
+            drifts[i].setPhase (static_cast<float> (i) / static_cast<float> (N));
+            drifts[i].setFrequency (0.11f + 0.07f * static_cast<float> (i));
             // Alternating input/output signs decorrelate the channels.
             signs[i] = ((i * 7 + i / 2) % 3 == 0) ? -1.0f : 1.0f;
         }
@@ -193,6 +196,19 @@ public:
         updateRotation();
     }
 
+    // Smooth random drift in place of the sine wobble on each line (see DriftLfo). By ear
+    // and by ringing score it only helped Space Map, so it is off unless a machine asks.
+    void setRandomDrift (bool on) noexcept { useDrift = on; }
+
+    // Scales the extra movement long tails get (the faster rotation and the delay drift
+    // from 3 s to 8 s of decay). 1 is the "Middle" setting; machines whose long tails
+    // still ring ask for a little more.
+    void setTailMovement (float amount)
+    {
+        tailMovement = std::max (0.0f, amount);
+        updateRotation();
+    }
+
     void setFreeze (bool f)
     {
         frozen = f;
@@ -242,7 +258,8 @@ private:
         std::array<float, N> y {};
         for (std::size_t i = 0; i < N; ++i)
         {
-            const float d = delays[i].next() + depth * (0.5f + 0.5f * lfos[i].next()) + 2.0f;
+            const float wobble = useDrift ? drifts[i].next() : lfos[i].next();
+            const float d = delays[i].next() + depth * (0.5f + 0.5f * wobble) + 2.0f;
             y[i] = lines[i].readFractional (d);
             tap (i, y[i]);
             float v = decay[i].process (y[i], aLow, aHigh, gLow[i].next(), gMid[i].next(), gHigh[i].next());
@@ -337,8 +354,8 @@ private:
         const float t = frozen ? 1.0f : std::clamp ((rt - kTailStart) / (kTailFull - kTailStart), 0.0f, 1.0f);
         const float tail = t * t * (3.0f - 2.0f * t);
         rotation.setTarget (std::max (modAmount, tail) * (1.0f + tail));
-        rotRate = 1.0f + (kTailRate - 1.0f) * tail;
-        tailDepth.setTarget (tail * msToSamples (kTailDriftMs, fs));
+        rotRate = 1.0f + (kTailRate - 1.0f) * tail * tailMovement;
+        tailDepth.setTarget (msToSamples (std::min (tail * kTailDriftMs * tailMovement, kMaxModMs), fs));
     }
 
     void updateGains()
@@ -371,7 +388,10 @@ private:
     float loopAllpassGain = 0.0f;
     std::array<ThreeBandDecay, N> decay;
     std::array<Smoother, N> delays, gLow, gMid, gHigh;
-    std::array<DriftLfo, N> lfos;
+    std::array<Lfo, N> lfos;
+    std::array<DriftLfo, N> drifts;
+    bool useDrift = false;
+    float tailMovement = 1.0f;
     std::array<float, N> signs {};
     Smoother inputGain, modDepth, rotation, tailDepth;
     float modAmount = 0.0f, rotRate = 1.0f;
@@ -426,7 +446,7 @@ private:
     float maxScale = 1.0f;
     std::array<float, N> baseDelays {};
     std::array<Allpass, N> allpasses;
-    std::array<DriftLfo, N> lfos;
+    std::array<Lfo, N> lfos;
 };
 
 // Multi-tap early reflections read from one delay line. Tap times glide smoothly when

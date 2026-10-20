@@ -65,6 +65,7 @@ public:
         d.highHz = 5000.0f;
         fdn.setDecay (d);
         fdn.setModulation (p.mod * 0.5f);
+        fdn.setTailMovement (kTailMovement);
         fdn.setFreeze (p.freeze);
         const float bal = std::clamp (p.param2, 0.0f, 1.0f);
         erGain.setTarget (p.freeze ? 0.0f : 1.0f - 0.8f * bal);
@@ -88,6 +89,9 @@ public:
 
 private:
     static constexpr float kMaxScale = 2.0f;
+    // Extra long-tail movement, set from this machine's ringing score at 12 s of decay
+    // (Mod 30): 1 + 0.5 x (score - 4), rounded. Score 4.9.
+    static constexpr float kTailMovement = 1.45f;
     static constexpr std::array<float, 12> kTapsL { 3.1f, 5.9f, 8.3f, 11.7f, 14.3f, 17.9f, 21.1f, 24.7f, 29.3f, 33.1f, 38.9f, 44.3f };
     static constexpr std::array<float, 12> kTapsR { 4.3f, 6.7f, 9.9f, 12.1f, 15.7f, 19.3f, 22.9f, 26.3f, 31.1f, 35.9f, 41.3f, 47.1f };
     static constexpr float kMaxLateScale = 1.5f;

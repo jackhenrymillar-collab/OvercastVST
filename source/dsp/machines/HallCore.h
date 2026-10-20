@@ -24,6 +24,9 @@ public:
 
     void reset() { diffL.reset(); diffR.reset(); fdn.reset(); }
 
+    // Extra long-tail movement for this machine (see Fdn::setTailMovement).
+    void setTailMovement (float amount) { fdn.setTailMovement (amount); }
+
     void configure (float decaySeconds, float lowMult, float highMult, float mod, float size, bool freeze)
     {
         std::array<float, kLines> ms {}, ap {};

@@ -11,7 +11,16 @@ namespace overcast::dsp
 class Arena final : public ReverbMachine
 {
 public:
-    void prepare (double sampleRate, int) override { core.prepare (sampleRate); setParams (params); core.reset(); }
+    void prepare (double sampleRate, int) override
+    {
+        core.prepare (sampleRate);
+        // Extra long-tail movement for Arena, which scored 4.4 for ringing at 12 s of decay.
+        // The usual 1 + 0.5 x (score - 4) gives 1.2, but on piano that measured worse (5.0);
+        // 1.5 brings it to 2.8.
+        core.setTailMovement (1.5f);
+        setParams (params);
+        core.reset();
+    }
     void reset() override { core.reset(); }
 
     void setParams (const MachineParams& p) override

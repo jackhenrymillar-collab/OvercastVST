@@ -52,6 +52,7 @@ public:
         d.rtHigh = p.decaySeconds * 0.55f;
         fdn.setDecay (d);
         fdn.setModulation (p.mod);
+        fdn.setTailMovement (kTailMovement);
         fdn.setFreeze (p.freeze);
         const auto step = std::min<std::size_t> (static_cast<std::size_t> (std::clamp (p.param1, 0.0f, 1.0f) * 5.0f), 4);
         for (auto& s : shifters)
@@ -91,6 +92,9 @@ public:
 private:
     // Long lines: fewer passes per second means the shimmer tail lasts longer.
     // Prime sample counts at 48 kHz, with no two lines near a 2:1, 3:2 or 4:3 ratio.
+    // Extra long-tail movement, set from this machine's ringing score at 12 s of decay
+    // (Mod 30): 1 + 0.5 x (score - 4), rounded. Score 6.1.
+    static constexpr float kTailMovement = 2.05f;
     static constexpr std::array<float, 8> kDelays { 61.2292f, 71.8542f, 79.1042f, 89.3542f, 97.7292f, 108.5208f, 119.6458f, 131.7292f };
     // With so few, long lines the echoes are far apart and repeat audibly when Mod is
     // low; an allpass in each loop fills the gaps between them.
