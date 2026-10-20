@@ -22,6 +22,7 @@ namespace ParamID
     inline constexpr auto spillover = "spillover";
     inline constexpr auto killDry   = "killdry";
     inline constexpr auto mixLaw    = "mixlaw";
+    inline constexpr auto bypass    = "bypass";
 }
 
 // The order must match dsp::MachineId and must never change (saved sessions store the index).

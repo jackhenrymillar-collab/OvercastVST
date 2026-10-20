@@ -1,6 +1,10 @@
 // Renders the plugin's panel to PNG files without a host. Development only.
 //
-//   OvercastSnapshot <out-dir> [preset-number] [seconds] [fps] [scale]
+//   OvercastSnapshot <out-dir> [preset-number] [seconds] [fps] [scale] [param=value ...]
+//
+// Any param=value arguments set parameters after the preset loads, in their own
+// units (for example machine=8 bypass=1 tone=-100). With BENCH=1 in the
+// environment it skips writing files and prints the average time per frame.
 //
 // With seconds = 0 it writes one still (panel.png). Otherwise it writes numbered
 // frames (frame-0000.png, ...) covering that many seconds of animation.
@@ -8,6 +12,9 @@
 #include "PluginEditor.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
+
+#include <cstdio>
+#include <cstdlib>
 
 int main (int argc, char* argv[])
 {
@@ -24,6 +31,12 @@ int main (int argc, char* argv[])
     overcast::OvercastProcessor processor;
     if (preset > 0)
         processor.getPresets().loadPreset (preset - 1);
+    for (int i = 6; i < argc; ++i)
+    {
+        const juce::String arg (argv[i]);
+        if (auto* p = processor.getState().getParameter (arg.upToFirstOccurrenceOf ("=", false, false)))
+            p->setValueNotifyingHost (p->convertTo0to1 (arg.fromFirstOccurrenceOf ("=", false, false).getFloatValue()));
+    }
 
     std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
     auto* overcastEditor = dynamic_cast<overcast::OvercastEditor*> (editor.get());
@@ -31,6 +44,7 @@ int main (int argc, char* argv[])
     auto write = [&] (const juce::String& name)
     {
         const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, scale);
+        if (std::getenv ("BENCH")) return;
         juce::FileOutputStream out (outDir.getChildFile (name));
         out.setPosition (0);
         out.truncate();
@@ -45,10 +59,12 @@ int main (int argc, char* argv[])
     }
 
     const int frames = juce::roundToInt (seconds * fps);
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
     for (int i = 0; i < frames; ++i)
     {
         overcastEditor->renderFrame (static_cast<double> (i) / fps, true);
         write ("frame-" + juce::String (i).paddedLeft ('0', 4) + ".png");
     }
+    std::printf ("%.2f ms/frame\n", (juce::Time::getMillisecondCounterHiRes() - t0) / frames);
     return 0;
 }
