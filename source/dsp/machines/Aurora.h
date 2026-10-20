@@ -22,8 +22,8 @@ namespace overcast::dsp
 // Long decays: a mode that holds perfectly still rings as its own pitch, and past a few
 // seconds of decay the natural (Harmony 0) tail turned into a cloud of separate tones.
 // From 3 s to 8 s of decay (and when frozen) every mode keeps a small drift of about
-// 2 cents even with Mod at zero, and all drifts run up to four times faster, which is
-// enough to blend neighbouring modes into a smooth tail.
+// 2 cents even with Mod at zero, which blends neighbouring modes into a smoother tail.
+// The drifts keep their usual slow rates; faster drift made held notes warble.
 class Aurora final : public ReverbMachine
 {
 public:
@@ -236,11 +236,8 @@ private:
         const float t = params.freeze ? 1.0f : std::clamp ((rtMid - kTailStart) / (kTailFull - kTailStart), 0.0f, 1.0f);
         const float tail = t * t * (3.0f - 2.0f * t);
         const float depth = 0.004f * std::max (modAmount.getCurrent(), kTailDrift * tail);
-        const float rateScale = 1.0f + 3.0f * tail;
         const float nyquistGuard = 0.45f * static_cast<float> (fs);
-        // Each mode's drift phase moves on by its rate times the speed-up, so changing the
-        // speed never makes the drift jump.
-        const float step = rateScale * static_cast<float> (kUpdate) / static_cast<float> (fs);
+        const float step = static_cast<float> (kUpdate) / static_cast<float> (fs);
         for (std::size_t k = 0; k < kModes; ++k)
         {
             phase[k] += rate[k] * step;

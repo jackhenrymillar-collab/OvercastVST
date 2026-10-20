@@ -33,7 +33,7 @@ namespace
     // Long tails: two slowly turning rotations mix the tank's halves (see process()).
     constexpr float kTailStart = 3.0f, kTailFull = 8.0f;   // seconds of decay
     constexpr float kMaxTurn = 1.5707963f;                  // 90 degrees
-    constexpr float kJunctionHz = 3.0f, kMiddleHz = 4.1f;
+    constexpr float kJunctionHz = 0.31f, kMiddleHz = 0.43f;
 }
 
 std::size_t PlateReverb::scaled (int samplesAt29761) const noexcept
