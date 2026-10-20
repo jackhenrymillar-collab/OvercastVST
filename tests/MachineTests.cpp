@@ -160,7 +160,8 @@ TEST_CASE ("Freeze never makes a tail grow, and holds it on sustaining machines"
 
 TEST_CASE ("Hall-type machines decay at the Decay setting")
 {
-    const int id = GENERATE (static_cast<int> (MachineId::arena), static_cast<int> (MachineId::haze));
+    const int id = GENERATE (static_cast<int> (MachineId::arena), static_cast<int> (MachineId::haze),
+                             static_cast<int> (MachineId::aurora));
     const float target = GENERATE (1.5f, 4.0f);
     const double fs = 48000.0;
     auto p = defaults();
@@ -232,7 +233,8 @@ TEST_CASE ("Tails don't ring with repeating echoes")
         Setting { static_cast<int> (MachineId::clearNight), 1.0f, 3.0f },
         Setting { static_cast<int> (MachineId::nebula), 0.0f, 3.0f, 0.0f },
         Setting { static_cast<int> (MachineId::nebula), 1.0f, 3.0f, 1.0f },
-        Setting { static_cast<int> (MachineId::aurora), 0.5f, 3.0f, 0.0f }, // natural tuning; harmony rings on purpose
+        Setting { static_cast<int> (MachineId::aurora), 0.0f, 3.0f, 0.0f },
+        Setting { static_cast<int> (MachineId::aurora), 1.0f, 3.0f, 1.0f },
         Setting { static_cast<int> (MachineId::sheet), 0.5f, 3.0f },
         Setting { static_cast<int> (MachineId::haze), 0.5f, 3.0f },
         Setting { static_cast<int> (MachineId::arena), 0.0f, 3.0f },
@@ -284,39 +286,6 @@ TEST_CASE ("Tails don't ring with repeating echoes")
     INFO (kNames[setting.id] << " param1 " << setting.param1 << ": repeat of " << worst
                              << " at " << 1000.0 * static_cast<double> (worstLag) / fs << " ms");
     CHECK (worst < 0.25);
-}
-
-// Strongest repeat between 3 and 40 ms of a highpassed tail: with Harmony up, Aurora's
-// modes sit on the harmonics of A (55 Hz), so the tail repeats every period of the root.
-static double rootPeriodMs (float pitchKnob)
-{
-    const double fs = 24000.0;
-    auto p = defaults();
-    p.param1 = pitchKnob;
-    p.param2 = 1.0f;
-    p.mod = 0.0f;
-    auto m = make (static_cast<int> (MachineId::aurora), fs, p);
-    std::vector<float> in (static_cast<std::size_t> (fs * 1.2), 0.0f);
-    in[0] = 1.0f;
-    const auto out = render (*m, in);
-    const std::size_t start = static_cast<std::size_t> (0.3 * fs), n = static_cast<std::size_t> (0.8 * fs);
-    const float* x = out.l.data() + start;
-    double best = 0.0;
-    std::size_t bestLag = 0;
-    for (std::size_t lag = static_cast<std::size_t> (0.003 * fs); lag < static_cast<std::size_t> (0.04 * fs); ++lag)
-    {
-        double sum = 0.0;
-        for (std::size_t i = 0; i + lag < n; ++i)
-            sum += static_cast<double> (x[i]) * x[i + lag];
-        if (sum > best) { best = sum; bestLag = lag; }
-    }
-    return 1000.0 * static_cast<double> (bestLag) / fs;
-}
-
-TEST_CASE ("Aurora's Harmony and Pitch knobs tune the tail")
-{
-    CHECK (rootPeriodMs (0.5f) == Catch::Approx (1000.0 / 55.0).epsilon (0.03));  // A
-    CHECK (rootPeriodMs (1.0f) == Catch::Approx (1000.0 / 110.0).epsilon (0.03)); // an octave up
 }
 
 // Abel and Huang's normalised echo density over 20 ms windows: about 1 once the
@@ -421,7 +390,7 @@ TEST_CASE ("Switching machines never clips or produces NaN, with and without spi
 TEST_CASE ("Moving knobs that change delay lengths doesn't click or zip")
 {
     // A 220 Hz sine through the engine while a knob jumps between extremes. Delay
-    // lengths and Aurora's modes may glide (a pitch bend) but must never jump or sweep
+    // lengths may glide (a pitch bend) but must never jump or sweep
     // fast; either shows up as a burst of energy far above the sine, so the output
     // above 5 kHz (an 8th-order highpass) must stay quiet.
     enum Knob { first, second, decay };
@@ -429,7 +398,7 @@ TEST_CASE ("Moving knobs that change delay lengths doesn't click or zip")
     const auto c = GENERATE (Case { 0, first },    // Chamber size
                              Case { 11, first },   // Space Map size
                              Case { 1, decay },    // Arena decay
-                             Case { 7, first },    // Aurora pitch
+                             Case { 7, first },    // Aurora size
                              Case { 7, decay },    // Aurora decay
                              Case { 9, second },   // Nebula softness
                              Case { 10, first });  // Clear Night size
@@ -534,9 +503,8 @@ static double ringingPitches (const std::vector<float>& x, double fs, double sta
 // Long decays used to ring at separate pitches below 1 kHz, right where piano notes
 // sit (Chamber and Space Map measured 5 to 10 at 9 s, with Mod at 30% or off; Coil 14).
 // The networks' mixing matrices now turn further as the decay grows, Sheet's tank halves
-// are mixed by slowly turning rotations, and Aurora's modes keep drifting. Coil is left
-// as a plain spring tank: mixing its springs took away the spring sound. Aurora is measured at Harmony 0:
-// with Harmony up it rings as a chord on purpose.
+// are mixed by slowly turning rotations, and Aurora keeps a little slow modulation. Coil
+// is left as a plain spring tank: mixing its springs took away the spring sound.
 TEST_CASE ("Long tails don't ring at separate pitches")
 {
     const auto id = GENERATE (static_cast<int> (MachineId::chamber), static_cast<int> (MachineId::arena),
@@ -552,7 +520,7 @@ TEST_CASE ("Long tails don't ring at separate pitches")
     p.decaySeconds = 12.0f;
     p.mod = mod;
     p.param1 = 0.5f;
-    p.param2 = id == static_cast<int> (MachineId::aurora) ? 0.0f : 0.5f;
+    p.param2 = 0.5f;
     auto m = make (id, fs, p);
     std::vector<float> in (static_cast<std::size_t> (fs * 5.5), 0.0f);
     in[0] = 1.0f;
