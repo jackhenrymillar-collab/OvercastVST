@@ -82,8 +82,8 @@ private:
 // Halo: shimmer, after ShimmerVerb by Danial Kooshki (MIT). A Zita-Rev1 style reverb (the
 // design by Fons Adriaensen, as in Julius O. Smith's Faust zita_rev1: eight long lines,
 // each with a 13 to 32 ms allpass inside, a Hadamard mix and two-band decay) is fed back
-// through a shimmer loop: the reverb's output is band-limited (250 Hz to 8 kHz), pitch
-// shifted by one or two granular layers, gently limited, and mixed back into the reverb's
+// through a shimmer loop: the reverb's output is band-limited (250 Hz to 6 kHz), pitch
+// shifted by one or two granular layers, safety-limited, and mixed back into the reverb's
 // input. Each trip round the loop climbs another interval, so the tail rises in a wash of
 // octaves rather than one line ringing up the scale.
 // param1 = interval (-12, +7, +12, +12 with +7, +12 with +19 semitones),
@@ -112,8 +112,8 @@ public:
             layerB[c].prepare (fs, 60.0f, 5.0f, 23u + 7u * static_cast<std::uint32_t> (c));
             hp1[c].setHighpass (250.0f, fs);
             hp2[c].setHighpass (250.0f, fs);
-            lp1[c].setLowpass (8000.0f, fs);
-            lp2[c].setLowpass (8000.0f, fs);
+            lp1[c].setLowpass (kShimmerTopHz, fs);
+            lp2[c].setLowpass (kShimmerTopHz, fs);
         }
         feedback.prepare (fs, 40.0f);
         gainA.prepare (fs, 40.0f);
@@ -207,6 +207,9 @@ private:
     static constexpr std::array<float, 8> kLoopMs { 153.129f, 210.389f, 127.837f, 256.891f, 174.713f, 192.303f, 125.0f, 219.991f };
     static constexpr std::array<float, 8> kAllpassMs { 20.346f, 24.421f, 31.604f, 27.333f, 22.904f, 29.291f, 13.458f, 19.123f };
 
+    // Top of the shimmer loop's band. Each trip doubles the pitch, so a lower top keeps the
+    // climbing octaves from turning gritty (Valhalla's "Dark" mode does the same).
+    static constexpr float kShimmerTopHz = 6000.0f;
     static constexpr float kMaxLoopGain = 0.8944f; // sqrt(0.8): at most 80% energy per trip
 
     // How much the shimmer loop lengthens the tail, measured at Shimmer 0, 30, 60 and 100%
@@ -227,8 +230,11 @@ private:
         return 0.37f + 0.123f * std::max (decaySeconds, 0.0f);
     }
 
-    // Unity for small signals, easing smoothly to at most 1.
-    static float softLimit (float x) noexcept { return std::tanh (x); }
+    // Safety cap on the shimmer loop: untouched up to +6 dBFS (so loud playing comes back
+    // clean, not squashed), then easing smoothly towards +12 dBFS so the loop can never run
+    // away. A plain tanh here bent the shimmer from about -6 dBFS input.
+    static float softLimit (float x) noexcept { return kLoopHeadroom * overcast::dsp::softLimit (x / kLoopHeadroom, 0.5f); }
+    static constexpr float kLoopHeadroom = 4.0f;
 
     double fs = 48000.0;
     Diffuser<6> diffL, diffR; // short stages (under 10 ms): dense without colouring the sound

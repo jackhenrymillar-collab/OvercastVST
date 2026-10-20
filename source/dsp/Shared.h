@@ -118,6 +118,12 @@ public:
         modDepth.prepare (fs, 50.0f);
         rotation.prepare (fs, 50.0f);
         tailDepth.prepare (fs, 50.0f);
+        // A delay swinging D seconds peak to peak at f Hz bends pitch by about
+        // 1731 * pi * f * D cents; solve for D at the fastest line's rate.
+        {
+            const float fastestHz = 0.11f + 0.07f * static_cast<float> (N - 1);
+            maxTailDriftMs = 1000.0f * kMaxTailCents / (1731.0f * std::numbers::pi_v<float> * fastestHz);
+        }
         for (std::size_t k = 0; k < N / 2; ++k)
         {
             // 0.09 to about 0.4 Hz, spread so no two pairs line up.
@@ -356,8 +362,13 @@ private:
         const float t = frozen ? 1.0f : std::clamp ((rt - kTailStart) / (kTailFull - kTailStart), 0.0f, 1.0f);
         const float tail = t * t * (3.0f - 2.0f * t);
         rotation.setTarget (std::max (modAmount, tail) * (1.0f + tail));
-        rotRate = 1.0f + (kTailRate - 1.0f) * tail * tailMovement;
-        tailDepth.setTarget (msToSamples (std::min (tail * kTailDriftMs * tailMovement, kMaxModMs), fs));
+        // Delay drift bends pitch, so it is capped at kMaxTailCents on the fastest line; any
+        // movement asked for beyond that goes into the rotation instead, which doesn't.
+        const float wantMs = tail * kTailDriftMs * tailMovement;
+        const float driftMs = std::min ({ wantMs, maxTailDriftMs, kMaxModMs });
+        const float extra = wantMs > driftMs ? wantMs / driftMs : 1.0f;
+        rotRate = (1.0f + (kTailRate - 1.0f) * tail * tailMovement) * extra;
+        tailDepth.setTarget (msToSamples (driftMs, fs));
     }
 
     void updateGains()
@@ -398,6 +409,12 @@ private:
     Smoother inputGain, modDepth, rotation, tailDepth;
     float modAmount = 0.0f, rotRate = 1.0f;
     static constexpr float kTailRate = 2.0f, kTailDriftMs = 1.0f; // "Middle" long-tail movement
+    // Long-tail pitch drift stays within the "lush but not wobbly" range (3 to 8 cents is
+    // the usual target; 10 to 30 cents reads as chorus). Capping it and turning the
+    // rotation faster by the same factor kept ringing scores level on average (3.06 vs
+    // 3.08 over Chamber, Arena, Rise and Halo), with less pitch bend.
+    static constexpr float kMaxTailCents = 8.0f;
+    float maxTailDriftMs = 1.27f;
     static constexpr float kTailStart = 3.0f, kTailFull = 8.0f; // seconds of decay
     const std::array<float, N * N>* matrix = nullptr;
     std::array<float, N / 2> rotCos {}, rotSin {}, rotCosStep {}, rotSinStep {}, rotPhase {}, rotStep {};

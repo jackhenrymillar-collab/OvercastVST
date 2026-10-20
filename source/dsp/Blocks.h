@@ -354,4 +354,88 @@ inline float loopGuard (float x) noexcept
     return std::copysign (kThreshold + kRange * std::tanh ((ax - kThreshold) / kRange), x);
 }
 
+// Stereo-linked lookahead peak limiter. Below the ceiling it passes the signal unchanged
+// (just delayed by the lookahead). Above it, the gain dips smoothly before the peak
+// arrives and recovers over the release time, so loud input is turned down rather than
+// clipped or distorted.
+//
+// How it guarantees the ceiling: the gain each sample needs is held at its minimum for the
+// lookahead window, eased back up with the release, then averaged over the window. Every
+// value in that average is at or below what the delayed sample needs, so the average is too.
+class PeakLimiter
+{
+public:
+    void prepare (double sampleRate, float ceiling, float lookaheadMs = 1.5f, float releaseMs = 150.0f)
+    {
+        look = std::max<std::size_t> (1, static_cast<std::size_t> (std::lround (lookaheadMs * 0.001 * sampleRate)));
+        limit = ceiling;
+        release = 1.0f - std::exp (-1.0f / (releaseMs * 0.001f * static_cast<float> (sampleRate)));
+        cap = look + 2;
+        delayL.assign (look + 1, 0.0f);
+        delayR.assign (look + 1, 0.0f);
+        box.assign (look, 1.0f);
+        dqVal.assign (cap, 1.0f);
+        dqIdx.assign (cap, 0);
+        reset();
+    }
+
+    void reset()
+    {
+        std::fill (delayL.begin(), delayL.end(), 0.0f);
+        std::fill (delayR.begin(), delayR.end(), 0.0f);
+        std::fill (box.begin(), box.end(), 1.0f);
+        boxSum = static_cast<double> (look);
+        env = 1.0f;
+        head = tail = 0;
+        n = 0;
+        pos = boxPos = 0;
+    }
+
+    std::size_t latency() const noexcept { return look; }
+    float gain() const noexcept { return lastGain; }
+
+    void process (float& l, float& r) noexcept
+    {
+        const float peak = std::max (std::abs (l), std::abs (r));
+        const float need = peak > limit ? limit / peak : 1.0f;
+
+        // Running minimum over the last look + 1 samples (a monotonic queue).
+        while (tail != head && dqVal[(tail + cap - 1) % cap] >= need)
+            tail = (tail + cap - 1) % cap;
+        dqVal[tail] = need;
+        dqIdx[tail] = n;
+        tail = (tail + 1) % cap;
+        while (dqIdx[head] + static_cast<std::int64_t> (look) < n)
+            head = (head + 1) % cap;
+        const float held = dqVal[head];
+
+        env = held < env ? held : env + release * (held - env);
+
+        boxSum += static_cast<double> (env) - static_cast<double> (box[boxPos]);
+        box[boxPos] = env;
+        boxPos = (boxPos + 1) % look;
+        if (boxPos == 0) // re-add from scratch once per window so rounding never builds up
+        {
+            boxSum = 0.0;
+            for (const float v : box) boxSum += static_cast<double> (v);
+        }
+        lastGain = static_cast<float> (std::min (1.0, boxSum / static_cast<double> (look)));
+
+        delayL[pos] = l;
+        delayR[pos] = r;
+        pos = (pos + 1) % (look + 1);
+        l = delayL[pos] * lastGain; // the oldest sample: exactly look samples ago
+        r = delayR[pos] * lastGain;
+        ++n;
+    }
+
+private:
+    std::size_t look = 64, cap = 66, head = 0, tail = 0, pos = 0, boxPos = 0;
+    std::int64_t n = 0;
+    float limit = 1.0f, release = 0.0001f, env = 1.0f, lastGain = 1.0f;
+    double boxSum = 64.0;
+    std::vector<float> delayL, delayR, box, dqVal;
+    std::vector<std::int64_t> dqIdx;
+};
+
 } // namespace overcast::dsp

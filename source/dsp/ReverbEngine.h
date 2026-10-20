@@ -38,6 +38,8 @@ class ReverbEngine
 public:
     static constexpr float kMaxPreDelayMs = 500.0f;
     static constexpr float kSwitchFadeMs = 30.0f;
+    static constexpr float kInputCeiling = 1.0f; // 0 dBFS into the machines
+    static constexpr float kWetCeiling = 0.89f;  // -1 dBFS out of the wet path
 
     ReverbEngine();
 
@@ -68,6 +70,13 @@ private:
     int quietSamples = 0;
 
     DelayLine preDelayL, preDelayR;
+
+    // Headroom. The reverb cores are linear (measured clean up to +12 dBFS input), but a hot
+    // send or a wet signal that builds up louder than the input would otherwise hit the
+    // final safety clip. These turn loud signals down smoothly instead: one on the way into
+    // the machines (ceiling 0 dBFS), one on the wet output (ceiling -1 dBFS). Their short
+    // lookahead is taken out of the pre-delay, so timing only changes below about 3 ms.
+    PeakLimiter inputLimiter, wetLimiter;
     std::vector<float> preL, preR, wetL, wetR, oldL, oldR, zeros;
 
     Biquad lowCutL, lowCutR, highCutL, highCutR;

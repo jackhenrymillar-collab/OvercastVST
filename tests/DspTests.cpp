@@ -11,6 +11,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <random>
+
 using namespace overcast::dsp;
 using Catch::Approx;
 
@@ -55,6 +57,38 @@ TEST_CASE ("Soft limiter is transparent below threshold and bounded above")
     CHECK (softLimit (10.0f) <= 1.0f);
     CHECK (softLimit (-10.0f) >= -1.0f);
     CHECK (softLimit (0.95f) < 0.95f);
+}
+
+TEST_CASE ("Peak limiter passes quiet signals unchanged and never lets loud ones past the ceiling")
+{
+    PeakLimiter lim;
+    lim.prepare (48000.0, 0.89f);
+    const auto look = lim.latency();
+    std::mt19937 rng (5);
+    std::uniform_real_distribution<float> u (-1.0f, 1.0f);
+
+    // Quiet: an exact copy, delayed by the lookahead.
+    std::vector<float> in (20000);
+    for (auto& x : in) x = 0.5f * u (rng);
+    for (std::size_t i = 0; i < in.size(); ++i)
+    {
+        float l = in[i], r = -in[i];
+        lim.process (l, r);
+        if (i >= look) { REQUIRE (l == in[i - look]); REQUIRE (r == -in[i - look]); }
+    }
+
+    // Loud: bursts up to +18 dBFS with sudden single-sample spikes; nothing above the ceiling.
+    lim.reset();
+    float worst = 0.0f;
+    for (int i = 0; i < 96000; ++i)
+    {
+        float l = (i / 4000) % 2 ? 8.0f * u (rng) : 0.3f * u (rng);
+        if (i % 7919 == 0) l = 8.0f;
+        float r = 0.5f * l;
+        lim.process (l, r);
+        worst = std::max ({ worst, std::abs (l), std::abs (r) });
+    }
+    CHECK (worst <= 0.89f * 1.0001f);
 }
 
 TEST_CASE ("Loop guard is transparent in normal use, caps runaways and drops NaN")

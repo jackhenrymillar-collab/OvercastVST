@@ -4,6 +4,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <random>
 
 using namespace overcast::dsp;
@@ -114,4 +115,40 @@ TEST_CASE ("Mix laws")
 
     ReverbEngine::mixGains (0.3f, MixLaw::pedal, true, d, w);
     CHECK (d == 0.0f);
+}
+
+TEST_CASE ("Hot input can't clip any machine")
+{
+    // A chord and noise bursts at up to +18 dBFS through every machine, wet only, with the
+    // shimmer and feedback knobs up: the wet output stays under its -1 dBFS ceiling.
+    const double fs = 48000.0;
+    const std::size_t n = static_cast<std::size_t> (4.0 * fs);
+    const auto bursts = noise (n, 9);
+    std::vector<float> in (n);
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const double t = static_cast<double> (i) / fs;
+        for (double f : { 110.0, 164.8, 220.0, 277.2, 329.6 })
+            in[i] += 0.2f * static_cast<float> (std::sin (2.0 * 3.14159265358979 * f * t));
+        if (t < 0.5 || (t > 2.5 && t < 2.7)) in[i] += 1.25f * bursts[i];
+    }
+    for (int m = 0; m < kNumMachines; ++m)
+    {
+        ReverbEngine e;
+        EngineParams p;
+        p.machine = m; p.mix = 1.0f; p.killDry = true; p.tone = 1.0f;
+        p.machineParams.decaySeconds = 12.0f; p.machineParams.mod = 1.0f;
+        p.machineParams.param1 = 1.0f; p.machineParams.param2 = 1.0f;
+        e.setParams (p);
+        e.prepare (fs, 256);
+        std::vector<float> l (n), r (n);
+        for (std::size_t i = 0; i < n; ++i) { l[i] = 4.0f * in[i]; r[i] = -4.0f * in[i]; }
+        for (std::size_t i = 0; i < n; i += 256)
+            e.process (l.data() + i, r.data() + i, static_cast<int> (std::min<std::size_t> (256, n - i)));
+        float peak = 0.0f;
+        for (std::size_t i = 0; i < n; ++i) peak = std::max ({ peak, std::abs (l[i]), std::abs (r[i]) });
+        INFO ("machine " << m << " peak " << peak);
+        CHECK (allFinite (l));
+        CHECK (peak <= ReverbEngine::kWetCeiling * 1.0001f);
+    }
 }

@@ -61,6 +61,8 @@ void ReverbEngine::prepare (double sampleRate, int maxBlockSize)
     for (auto* v : { &preL, &preR, &wetL, &wetR, &oldL, &oldR, &zeros })
         v->assign (static_cast<std::size_t> (maxBlock), 0.0f);
 
+    inputLimiter.prepare (sampleRate, kInputCeiling);
+    wetLimiter.prepare (sampleRate, kWetCeiling);
     preDelaySamples.prepare (sampleRate, 80.0f);
     for (auto* s : { &dryGain, &wetGain, &toneLow, &toneHigh })
         s->prepare (sampleRate, 20.0f);
@@ -80,6 +82,7 @@ void ReverbEngine::reset()
     previous = -1;
     fadeIn = 1.0f;
     preDelayL.reset(); preDelayR.reset();
+    inputLimiter.reset(); wetLimiter.reset();
     lowCutL.reset(); lowCutR.reset(); highCutL.reset(); highCutR.reset();
     toneSplitL.reset(); toneSplitR.reset();
 
@@ -128,7 +131,8 @@ void ReverbEngine::setParams (const EngineParams& p)
     machine.setParams (mp);
 
     const float preMs = machine.consumesPreDelay() ? 0.0f : std::clamp (p.preDelayMs, 0.0f, kMaxPreDelayMs);
-    preDelaySamples.setTarget (std::max (preMs * 0.001f * static_cast<float> (fs), 2.0f));
+    const auto lookahead = static_cast<float> (inputLimiter.latency() + wetLimiter.latency());
+    preDelaySamples.setTarget (std::max (preMs * 0.001f * static_cast<float> (fs) - lookahead, 2.0f));
 
     float d = 1.0f, w = 0.0f;
     mixGains (p.mix, p.mixLaw, p.killDry, d, w);
@@ -171,8 +175,10 @@ void ReverbEngine::process (float* left, float* right, int numSamples)
         for (std::size_t i = 0; i < un; ++i)
         {
             const float d = preDelaySamples.next();
-            preDelayL.push (L[i]);
-            preDelayR.push (R[i]);
+            float inl = L[i], inr = R[i];
+            inputLimiter.process (inl, inr);
+            preDelayL.push (inl);
+            preDelayR.push (inr);
             preL[i] = preDelayL.readFractional (d);
             preR[i] = preDelayR.readFractional (d);
         }
@@ -233,7 +239,8 @@ void ReverbEngine::process (float* left, float* right, int numSamples)
             wl = highCutL.process (lowCutL.process (wl));
             wr = highCutR.process (lowCutR.process (wr));
 
-            wl = softLimit (wl);
+            wetLimiter.process (wl, wr);
+            wl = softLimit (wl); // final safety only: the limiter keeps the wet under this
             wr = softLimit (wr);
 
             const float dg = dryGain.next();
