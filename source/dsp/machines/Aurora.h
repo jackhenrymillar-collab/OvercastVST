@@ -155,10 +155,14 @@ private:
                     r[j] += orr[j] * i1;
                 }
             }
+            // Safety guard, once per short block so the loop above still vectorises: a mode
+            // can never grow past kModeLimit, and a non-finite value is dropped.
             for (std::size_t j = 0; j < W; ++j)
             {
-                re[k + j] = sr[j];
-                im[k + j] = si[j];
+                const float m2 = sr[j] * sr[j] + si[j] * si[j];
+                const float scale = ! (m2 < 1.0e30f) ? 0.0f : (m2 > kModeLimit2 ? std::sqrt (kModeLimit2 / m2) : 1.0f);
+                re[k + j] = sr[j] * scale;
+                im[k + j] = si[j] * scale;
             }
         }
         for (int i = 0; i < len; ++i)
@@ -269,6 +273,9 @@ private:
     }
 
     static constexpr float kTailStart = 3.0f, kTailFull = 8.0f; // seconds of decay
+    // Mode safety limit, squared: about 7x (17 dB) above the loudest mode measured with
+    // +12 dBFS noise held into a frozen 60 s tail at 96 kHz.
+    static constexpr float kModeLimit2 = 32768.0f * 32768.0f;
     static constexpr float kTailDrift = 0.3f;                    // as a share of full Mod
     static constexpr float kRootHz = 55.0f; // A1: the harmony knob pulls modes onto its harmonics
     // Not truly endless: a pole radius any closer to 1 is lost in float rounding and the

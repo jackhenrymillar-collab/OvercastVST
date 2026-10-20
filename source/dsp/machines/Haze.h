@@ -56,8 +56,9 @@ public:
     }
 
 private:
-    static constexpr std::array<float, 16> kDelays { 61.3f, 67.9f, 71.3f, 77.9f, 83.3f, 89.9f, 94.1f, 101.3f,
-                                                     107.9f, 113.3f, 119.9f, 127.1f, 133.7f, 139.1f, 146.3f, 153.7f };
+    // Prime sample counts at 48 kHz, with no two lines near a 2:1, 3:2 or 4:3 ratio.
+    static constexpr std::array<float, 16> kDelays { 61.2292f, 67.8958f, 71.1042f, 77.8958f, 83.3542f, 90.1458f, 94.1042f, 101.2708f,
+                                                     107.8958f, 113.2708f, 119.6458f, 127.1042f, 133.7708f, 139.1458f, 146.2292f, 153.5208f };
     Diffuser<8> diffL, diffR;
     Fdn<16> fdn;
     Smoother diffusion, smear;

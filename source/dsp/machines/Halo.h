@@ -90,7 +90,8 @@ public:
 
 private:
     // Long lines: fewer passes per second means the shimmer tail lasts longer.
-    static constexpr std::array<float, 8> kDelays { 61.3f, 71.9f, 79.1f, 89.3f, 97.7f, 107.9f, 119.3f, 131.7f };
+    // Prime sample counts at 48 kHz, with no two lines near a 2:1, 3:2 or 4:3 ratio.
+    static constexpr std::array<float, 8> kDelays { 61.2292f, 71.8542f, 79.1042f, 89.3542f, 97.7292f, 108.5208f, 119.6458f, 131.7292f };
     // With so few, long lines the echoes are far apart and repeat audibly when Mod is
     // low; an allpass in each loop fills the gaps between them.
     static constexpr std::array<float, 8> kLoopAllpass { 3.31f, 7.13f, 4.57f, 6.29f, 2.83f, 5.47f, 7.61f, 3.97f };

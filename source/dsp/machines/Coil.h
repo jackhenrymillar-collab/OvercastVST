@@ -112,7 +112,7 @@ public:
                     v = y;
                 }
                 const float d = sp.line.read (static_cast<std::size_t> (msToSamples (kSpringMs[s], fs)));
-                sp.line.push (v);
+                sp.line.push (loopGuard (v));
                 sp.fb = sp.dc.process (sp.damp.process (d, damp));
                 outL += sg * kPanL[s] * d;
                 outR += sg * kPanR[s] * d;
@@ -185,7 +185,7 @@ private:
         float fb = 0.0f;
     };
 
-    static constexpr std::array<float, 3> kSpringMs { 33.1f, 41.3f, 47.9f };
+    static constexpr std::array<float, 3> kSpringMs { 33.2708f, 41.2292f, 47.8542f }; // 1597, 1979, 2297 samples at 48 kHz (primes)
     static constexpr float kTailStart = 3.0f, kTailFull = 8.0f; // seconds of decay
     static constexpr float kAxisHz = 3.0f, kPairHz = 4.1f, kThirdHz = 5.3f, kLowHz = 300.0f;
     static constexpr std::array<float, 3> kPanL { 0.9f, 0.35f, 0.65f };

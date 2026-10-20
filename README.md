@@ -120,5 +120,7 @@ Notes:
 - Machines built on a feedback network (all but Sheet, Coil and Aurora) slowly rotate their feedback matrix, so the Mod knob smooths the tail without detuning it much.
 - Long decays keep their tails smooth on their own: from 3 s to 8 s of Decay (and whenever frozen) the matrix rotation grows and speeds up whatever Mod is set to. A still network's long tail otherwise splits into separate pitches that ring on, worst below 500 Hz.
 - Sheet, Coil and Aurora get the same treatment their own way. Sheet's two tank halves cross through slowly turning lossless mixes; Coil's three springs are fed into each other through turning rotations and lose their lows below 300 Hz a little faster; Aurora's tones drift slightly and faster. All of it ramps in from 3 s to 8 s of Decay, so short settings sound as before.
+- Delay lines in every network machine are prime sample counts at 48 kHz, with no two lines near a 2:1, 3:2 or 4:3 ratio, so their resonances never stack. (Clear Night keeps its optimised set, which is already prime.)
+- Every feedback loop has a safety guard: it does nothing in normal use (loop signals peak at about a third of its threshold even with +12 dBFS noise into a frozen tail), but it saturates any runaway and drops non-finite values, so the plugin can't blow up.
 - Each machine remembers its own knob settings. Switching machines and back restores what you had.
 - **Coil** limits Decay to 0.3 to 12 s, like a real spring tank.

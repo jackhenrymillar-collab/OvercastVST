@@ -190,8 +190,9 @@ private:
         }
     }
 
-    static constexpr std::array<float, kLines> kDelays { 31.3f, 34.7f, 37.9f, 41.3f, 44.9f, 48.1f, 52.7f, 56.3f,
-                                                         60.1f, 64.7f, 68.9f, 73.1f, 77.9f, 82.3f, 87.7f, 93.1f };
+    // Prime sample counts at 48 kHz, with no two lines near a 2:1, 3:2 or 4:3 ratio.
+    static constexpr std::array<float, kLines> kDelays { 31.2292f, 34.7292f, 37.9792f, 41.2292f, 44.8542f, 48.1042f, 52.7292f, 56.2292f,
+                                                         60.1458f, 64.7708f, 68.8958f, 73.1458f, 77.8958f, 81.8958f, 87.7292f, 92.9792f };
     static constexpr std::array<float, kLines> kLoopAllpass { 2.31f, 4.07f, 1.63f, 3.37f, 2.83f, 1.21f, 3.91f, 2.17f,
                                                               4.41f, 1.87f, 3.03f, 2.59f, 1.39f, 3.61f, 2.03f, 4.23f };
     static constexpr float kOutputScale = 0.1f;

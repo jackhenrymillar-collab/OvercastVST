@@ -209,8 +209,8 @@ void PlateReverb::process (const float* inL, const float* inR, float* wetL, floa
 
         // feedbackL feeds the right half and feedbackR the left; at 90 degrees each half feeds itself.
         const float a = l2 * g, b = r2 * g;
-        feedbackL = junctionCos * a + junctionSin * b;
-        feedbackR = junctionCos * b - junctionSin * a;
+        feedbackL = loopGuard (junctionCos * a + junctionSin * b);
+        feedbackR = loopGuard (junctionCos * b - junctionSin * a);
 
         // Output taps (Dattorro table 2), left taps mostly from the right half and vice versa.
         float yL = delay1R.read (taps[0]) + delay1R.read (taps[1]) - allpass2R.tap (taps[2])
