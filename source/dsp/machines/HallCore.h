@@ -15,8 +15,8 @@ public:
     void prepare (double sampleRate)
     {
         fs = sampleRate;
-        diffL.prepare (fs, { 4.7f, 3.6f, 12.7f, 9.3f });
-        diffR.prepare (fs, { 5.3f, 3.1f, 11.9f, 9.9f });
+        diffL.prepare (fs, { 1.3f, 2.1f, 3.1f, 4.3f, 6.1f, 8.3f });
+        diffR.prepare (fs, { 1.5f, 2.3f, 2.9f, 4.7f, 5.9f, 8.9f });
         fdn.prepare (fs, kBase.back() * kMaxSize);
         configure (3.0f, 1.0f, 0.5f, 0.5f, 1.0f, false);
         reset();
@@ -66,7 +66,7 @@ private:
     static constexpr float kDiffusion = 0.7f;
 
     double fs = 48000.0;
-    Diffuser<4> diffL, diffR;
+    Diffuser<6> diffL, diffR; // short stages (under 10 ms): dense without colouring the sound
     Fdn<kLines> fdn;
 };
 

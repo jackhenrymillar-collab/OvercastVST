@@ -42,8 +42,8 @@ public:
         // A resonator's response grows with the number of samples per second it rings
         // for, so the output is scaled to sound the same at every sample rate.
         outScale = kOutputScale * 48000.0f / static_cast<float> (fs);
-        diffL.prepare (fs, { 4.1f, 6.3f, 9.7f, 13.9f });
-        diffR.prepare (fs, { 4.7f, 5.9f, 10.3f, 13.1f });
+        diffL.prepare (fs, { 1.3f, 2.1f, 3.1f, 4.3f, 6.1f, 8.3f });
+        diffR.prepare (fs, { 1.5f, 2.3f, 2.9f, 4.7f, 5.9f, 8.9f });
         pitch.prepare (fs, 250.0f);
         harmony.prepare (fs, 250.0f);
         modAmount.prepare (fs, 100.0f);
@@ -285,7 +285,7 @@ private:
     double fs = 48000.0;
     std::array<float, kUpdate * kLanes> accL {}, accR {};
     std::vector<float> re, im, ar, ai, dar, dai, tar, tai, bL, bR, cL, cR, baseHz, harmonicHz, rate, drift, phase;
-    Diffuser<4> diffL, diffR;
+    Diffuser<6> diffL, diffR; // short stages (under 10 ms): dense without colouring the sound
     Smoother pitch, harmony, modAmount, inputGain;
     float rtLow = 3.3f, rtMid = 3.0f, rtHigh = 1.35f;
     std::size_t counter = 0;

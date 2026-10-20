@@ -121,6 +121,7 @@ Notes:
 - Long decays keep their tails smooth on their own: from 3 s to 8 s of Decay (and whenever frozen) the matrix rotation swings further whatever Mod is set to, at its usual slow rates. A still network's long tail otherwise splits into separate pitches that ring on, worst below 500 Hz. Turning faster smooths the tail more but makes held notes swirl, so it stays slow.
 - Sheet and Aurora get the same treatment their own way: Sheet's two tank halves cross through slowly turning lossless mixes, and Aurora's tones drift slightly. Both ramp in from 3 s to 8 s of Decay, so short settings sound as before. Coil stays a plain spring tank.
 - Delay lines in every network machine are prime sample counts at 48 kHz, with no two lines near a 2:1, 3:2 or 4:3 ratio, so their resonances never stack. (Clear Night keeps its optimised set, which is already prime.)
+- Input diffusers are cascades of short allpasses, all under 10 ms (six per side in most machines, twelve in Haze), so they thicken the attack without a metallic tone. Blossom's in-loop diffusers follow the same rule. Sheet keeps Dattorro's long tank allpasses, which make the plate sound.
 - Every feedback loop has a safety guard: it does nothing in normal use (loop signals peak at about a third of its threshold even with +12 dBFS noise into a frozen tail), but it saturates any runaway and drops non-finite values, so the plugin can't blow up.
 - Each machine remembers its own knob settings. Switching machines and back restores what you had.
 - **Coil** limits Decay to 0.3 to 12 s, like a real spring tank.

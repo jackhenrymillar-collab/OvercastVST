@@ -18,8 +18,8 @@ public:
         core.prepare (fs);
         for (auto* l : { &loopL, &loopR })
             l->prepare (static_cast<std::size_t> (msToSamples (345.0f, fs)) + 8);
-        diffL.prepare (fs, { 7.1f, 11.3f, 17.9f, 23.1f });
-        diffR.prepare (fs, { 7.9f, 10.7f, 18.7f, 22.3f });
+        diffL.prepare (fs, { 2.3f, 3.7f, 5.3f, 6.7f, 8.1f, 9.7f });
+        diffR.prepare (fs, { 2.9f, 3.3f, 4.9f, 7.1f, 8.7f, 9.3f });
         length.prepare (fs, 120.0f);
         feedback.prepare (fs, 30.0f);
         inputGain.prepare (fs, 50.0f);
@@ -68,7 +68,7 @@ private:
     double fs = 48000.0;
     HallCore core;
     DelayLine loopL, loopR;
-    Diffuser<4> diffL, diffR;
+    Diffuser<6> diffL, diffR; // short stages (under 10 ms): dense without colouring the sound
     OnePoleLowpass dampL, dampR;
     Smoother length, feedback, inputGain;
     Lfo wobbleL, wobbleR;

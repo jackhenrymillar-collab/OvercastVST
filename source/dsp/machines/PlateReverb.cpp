@@ -5,10 +5,11 @@ namespace overcast::dsp
 
 namespace
 {
-    // Delay lengths from Dattorro's paper, in samples at his 29761 Hz reference rate.
-    constexpr int kInputDiffusers[4] = { 142, 107, 379, 277 };
+    // Delay lengths from Dattorro's paper, in samples at his 29761 Hz reference rate. The two
+    // longer input diffusers are shortened to under 10 ms (Dattorro: 379 and 277 samples).
+    constexpr int kInputDiffusers[4] = { 142, 107, 293, 227 };
     // Slightly different lengths for the right input chain, so L and R decorrelate.
-    constexpr int kInputDiffusersAlt[4] = { 151, 113, 367, 289 };
+    constexpr int kInputDiffusersAlt[4] = { 151, 113, 281, 239 };
     constexpr float kInputDiffusion1 = 0.75f;
     constexpr float kInputDiffusion2 = 0.625f;
 

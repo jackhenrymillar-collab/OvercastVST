@@ -21,8 +21,8 @@ public:
     void prepare (double sampleRate, int) override
     {
         fs = sampleRate;
-        diffL.prepare (fs, { 4.7f, 3.6f, 12.7f, 9.3f });
-        diffR.prepare (fs, { 5.3f, 3.1f, 11.9f, 9.9f });
+        diffL.prepare (fs, { 1.3f, 2.1f, 3.1f, 4.3f, 6.1f, 8.3f });
+        diffR.prepare (fs, { 1.5f, 2.3f, 2.9f, 4.7f, 5.9f, 8.9f });
         fdn.prepare (fs, kDelays.back());
         fdn.setDelays (kDelays);
         fdn.setLoopAllpasses (kLoopAllpass, 0.6f);
@@ -98,7 +98,7 @@ private:
     static constexpr std::array<float, 5> kRatios { 0.5f, 1.33484f, 1.49831f, 2.0f, 2.99661f };
 
     double fs = 48000.0;
-    Diffuser<4> diffL, diffR;
+    Diffuser<6> diffL, diffR; // short stages (under 10 ms): dense without colouring the sound
     Fdn<8> fdn;
     std::array<PitchShifter, 2> shifters;
     std::array<OnePoleLowpass, 2> tone;
