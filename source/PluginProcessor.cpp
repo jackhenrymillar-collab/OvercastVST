@@ -274,6 +274,7 @@ void OvercastProcessor::getStateInformation (juce::MemoryBlock& destData)
     auto copy = state.copyState();
     presets.writeToState (copy);
     copy.setProperty ("uiScale", uiScale.load(), nullptr);
+    copy.setProperty ("machineLayout", kMachineLayout, nullptr);
     writeMemory (copy);
     if (auto xml = copy.createXml())
         copyXmlToBinary (*xml, destData);
@@ -285,8 +286,31 @@ void OvercastProcessor::setStateInformation (const void* data, int sizeInBytes)
         if (xml->hasTagName (state.state.getType()))
         {
             auto tree = juce::ValueTree::fromXml (*xml);
-            const auto memoryNode = tree.getChildWithName (kMemoryTag);
+            auto memoryNode = tree.getChildWithName (kMemoryTag);
             tree.removeChild (memoryNode, nullptr);
+
+            // Sessions from before the machine list was cut to six: point the selector and
+            // each machine's remembered knobs at the new order, and drop removed machines.
+            const bool oldLayout = static_cast<int> (tree.getProperty ("machineLayout", 1)) < kMachineLayout;
+            int oldMachine = -1;
+            if (oldLayout)
+            {
+                for (auto child : tree)
+                    if (child.hasType ("PARAM") && child.getProperty ("id").toString() == ParamID::machine)
+                    {
+                        oldMachine = juce::roundToInt (static_cast<float> (child.getProperty ("value")));
+                        child.setProperty ("value", dsp::migrateMachineIndex (oldMachine), nullptr);
+                    }
+                for (int i = memoryNode.getNumChildren(); --i >= 0;)
+                {
+                    auto slot = memoryNode.getChild (i);
+                    const int m = slot.getProperty ("index", -1);
+                    if (dsp::oldMachineKept (m))
+                        slot.setProperty ("index", dsp::migrateMachineIndex (m), nullptr);
+                    else
+                        memoryNode.removeChild (i, nullptr);
+                }
+            }
 
             holdMemory = true;
             state.replaceState (tree);
@@ -306,6 +330,11 @@ void OvercastProcessor::setStateInformation (const void* data, int sizeInBytes)
             cancelPendingUpdate();
             const juce::ScopedLock sl (memoryLock);
             readMemory (memoryNode);
+            // A removed machine's knobs mean something else on its replacement, so the
+            // replacement starts from its own remembered (or factory) knobs.
+            if (oldLayout && oldMachine >= 0 && ! dsp::oldMachineKept (oldMachine))
+                if (const auto k = memory.recall (currentMachine()))
+                    applyKnobs (*k);
             memory.setCurrent (currentMachine());
             memory.store (currentMachine(), readKnobs());
             holdMemory = false;

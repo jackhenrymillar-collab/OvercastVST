@@ -5,8 +5,7 @@ namespace overcast
 
 juce::StringArray machineNames()
 {
-    return { "Chamber", "Arena", "Sheet", "Coil", "Rise", "Blossom",
-             "Haze", "Aurora", "Halo", "Nebula", "Clear Night", "Space Map" };
+    return { "Blossom", "Haze", "Aurora", "Halo", "Nebula", "Clear Night" };
 }
 
 namespace
@@ -34,7 +33,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     AudioProcessorValueTreeState::ParameterLayout layout;
     constexpr int v = 1; // parameter version hint for hosts
 
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::machine, v }, "Machine", machineNames(), 2));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::machine, v }, "Machine", machineNames(), 2)); // Aurora
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::decay, v }, "Decay", skewed (0.1f, 60.0f, 4.0f), 3.0f, withLabel ("s", 2)));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::preDelay, v }, "Pre-delay", skewed (0.0f, 500.0f, 60.0f), 20.0f, withLabel ("ms", 0)));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::mix, v }, "Mix", Range { 0.0f, 100.0f, 0.1f }, 35.0f, withLabel ("%", 0)));

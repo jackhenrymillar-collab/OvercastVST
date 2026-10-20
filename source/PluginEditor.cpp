@@ -336,12 +336,13 @@ void NightSkyPanel::resized()
     next.setBounds (juce::Rectangle<float> (inner.getRight() - 44.0f, inner.getY(), 44.0f, 36.0f).toNearestInt());
     presetName->setBounds (juce::Rectangle<float> (inner.getX() + 52.0f, inner.getY(), 240.0f, 36.0f).toNearestInt());
 
-    // Machine buttons: 12 across, 6 apart, at y = 259.
+    // Machine buttons: one row across, 8 apart, at y = 259.
     constexpr float contentW = right - left;
-    const float colW = (contentW - 11.0f * 6.0f) / 12.0f;
+    const float buttons = static_cast<float> (numMachines());
+    const float colW = (contentW - (buttons - 1.0f) * 8.0f) / buttons;
     for (int i = 0; i < numMachines(); ++i)
         machineButtons[static_cast<size_t> (i)]->setBounds (
-            juce::Rectangle<float> (left + static_cast<float> (i) * (colW + 6.0f), 259.0f, colW, 44.0f).toNearestInt());
+            juce::Rectangle<float> (left + static_cast<float> (i) * (colW + 8.0f), 259.0f, colW, 44.0f).toNearestInt());
 
     // Knobs: 7 across, 8 apart, dials starting at y = 337.
     const float knobW = (contentW - 6.0f * 8.0f) / 7.0f;

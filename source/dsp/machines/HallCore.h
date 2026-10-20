@@ -5,8 +5,7 @@
 namespace overcast::dsp
 {
 
-// Input diffusion into an 8-line FDN: the shared "hall" engine behind Arena, Blossom,
-// Rise and Halo.
+// Input diffusion into an 8-line FDN: the "hall" engine behind Blossom.
 class HallCore
 {
 public:

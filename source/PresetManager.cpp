@@ -1,5 +1,6 @@
 #include "PresetManager.h"
 #include "Parameters.h"
+#include "dsp/Machines.h"
 
 namespace overcast
 {
@@ -19,18 +20,12 @@ namespace
     // One starting point per machine, in machine order.
     constexpr FactoryPreset kFactory[] = {
         //  name               machine decay  pre   mix   tone   mod   p1     p2    lowcut highcut
-        { "Moonlit Room",      0,  1.4f,   8.0f, 30.0f,   0.0f, 30.0f,  45.0f, 55.0f,  60.0f, 12000.0f },
-        { "Night Arena",       1,  5.5f,  30.0f, 35.0f, -10.0f, 45.0f,  60.0f, 40.0f,  80.0f,  9000.0f },
-        { "Silver Sheet",      2,  2.6f,  20.0f, 30.0f,  15.0f, 35.0f,  40.0f, 30.0f, 100.0f, 16000.0f },
-        { "Rain Coil",         3,  2.2f,   0.0f, 35.0f,  10.0f, 25.0f, 100.0f, 45.0f, 120.0f,  7000.0f },
-        { "Dawn Rise",         4,  4.5f,  10.0f, 50.0f,  -5.0f, 50.0f,  55.0f, 20.0f,  80.0f, 10000.0f },
-        { "Night Blossom",     5,  6.0f,  25.0f, 40.0f,   0.0f, 50.0f,  60.0f, 55.0f,  80.0f, 11000.0f },
-        { "Midnight Haze",     6, 14.0f,  40.0f, 45.0f, -20.0f, 70.0f,  80.0f, 55.0f, 120.0f,  8000.0f },
-        { "Aurora Wash",       7,  8.0f,  30.0f, 40.0f,  -5.0f, 45.0f,  50.0f, 70.0f,  80.0f, 11000.0f },
-        { "Starlight Halo",    8,  9.0f,  30.0f, 40.0f,   5.0f, 45.0f,  70.0f, 50.0f, 150.0f, 12000.0f },
-        { "Night Nebula",      9, 10.0f,  20.0f, 45.0f, -10.0f, 40.0f,  50.0f, 60.0f, 100.0f,  9000.0f },
-        { "Clear Night Hall", 10,  3.5f,  15.0f, 35.0f,   0.0f, 30.0f,  55.0f, 55.0f,  60.0f, 14000.0f },
-        { "Observatory",      11,  1.8f,   0.0f, 30.0f,   0.0f, 20.0f,  60.0f, 40.0f,  40.0f, 15000.0f },
+        { "Night Blossom",     0,  6.0f,  25.0f, 40.0f,   0.0f, 50.0f,  60.0f, 55.0f,  80.0f, 11000.0f },
+        { "Midnight Haze",     1, 14.0f,  40.0f, 45.0f, -20.0f, 70.0f,  80.0f, 55.0f, 120.0f,  8000.0f },
+        { "Aurora Wash",       2,  8.0f,  30.0f, 40.0f,  -5.0f, 45.0f,  50.0f, 70.0f,  80.0f, 11000.0f },
+        { "Starlight Halo",    3,  9.0f,  30.0f, 40.0f,   5.0f, 45.0f,  70.0f, 50.0f, 150.0f, 12000.0f },
+        { "Night Nebula",      4, 10.0f,  20.0f, 45.0f, -10.0f, 40.0f,  50.0f, 60.0f, 100.0f,  9000.0f },
+        { "Clear Night Hall",  5,  3.5f,  15.0f, 35.0f,   0.0f, 30.0f,  55.0f, 55.0f,  60.0f, 14000.0f },
     };
 }
 
@@ -196,6 +191,11 @@ bool PresetManager::readPresetFile (const juce::File& file, Preset& out)
     out.values.clear();
     for (auto* p : xml->getChildWithTagNameIterator ("PARAM"))
         out.values[p->getStringAttribute ("id")] = static_cast<float> (p->getDoubleAttribute ("value"));
+
+    // Presets saved with the old twelve-machine list point at the closest machine left.
+    if (xml->getIntAttribute ("machineLayout", 1) < kMachineLayout)
+        if (const auto it = out.values.find (ParamID::machine); it != out.values.end())
+            it->second = static_cast<float> (dsp::migrateMachineIndex (juce::roundToInt (it->second)));
     return true;
 }
 
@@ -242,6 +242,7 @@ bool PresetManager::saveUserPreset (const juce::String& rawName)
     juce::XmlElement xml (kRootTag);
     xml.setAttribute ("name", name);
     xml.setAttribute ("version", 1);
+    xml.setAttribute ("machineLayout", kMachineLayout);
     for (const auto& [id, value] : captureValues())
     {
         auto* p = xml.createNewChildElement ("PARAM");

@@ -25,8 +25,13 @@ namespace ParamID
     inline constexpr auto bypass    = "bypass";
 }
 
-// The order must match dsp::MachineId and must never change (saved sessions store the index).
+// The order must match dsp::MachineId. Saved sessions store the index, so a change of
+// order needs a migration (see dsp::migrateMachineIndex and kMachineLayout).
 juce::StringArray machineNames();
+
+// Version of the machine list stored with sessions and user presets. 1: the original
+// twelve machines. 2: the six kept on 2026-10-20.
+inline constexpr int kMachineLayout = 2;
 
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 

@@ -37,7 +37,6 @@ namespace
     constexpr float kMidRes = 0.5f;
 
     float easeInOut (float t) { return 0.5f - 0.5f * std::cos (kPi * juce::jlimit (0.0f, 1.0f, t)); }
-    float easeIn (float t) { t = juce::jlimit (0.0f, 1.0f, t); return t * t; }
 
     // CSS-style looping clock: where an animation of `period` seconds with a
     // (usually negative) `delay` is at time `t`, as 0..1.
@@ -123,11 +122,9 @@ float NightSky::Fade::at (double t) const
 
 float NightSky::phaseFor (int machine) noexcept
 {
-    // Halo is the full moon. The eight machines before it wax in even steps from a
-    // thin crescent; the three after it wane towards a thin crescent. New moon is
-    // kept for bypass.
-    static constexpr float phases[numMachines] = { 0.06f, 0.115f, 0.17f, 0.225f, 0.28f, 0.335f,
-                                                    0.39f, 0.445f, 0.5f, 0.62f, 0.74f, 0.87f };
+    // Halo is the full moon. Blossom, Haze and Aurora wax towards it from a crescent;
+    // Nebula and Clear Night wane after it. New moon is kept for bypass.
+    static constexpr float phases[numMachines] = { 0.17f, 0.28f, 0.39f, 0.5f, 0.66f, 0.82f };
     return phases[juce::jlimit (0, numMachines - 1, machine)];
 }
 
@@ -198,7 +195,7 @@ void NightSky::buildScene()
         }
     }
 
-    // Clear Night's still stars, the Milky Way, rain, Blossom's lights, Space Map's stars, Halo's glints.
+    // Clear Night's still stars, Blossom's lights and Halo's glints.
     {
         Rng r (23);
         for (int i = 0; i < 80; ++i)
@@ -212,24 +209,6 @@ void NightSky::buildScene()
             s.glow = big ? 6.0f : 2.0f;
             s.colour = juce::Colour (0xfffffdf4);
             stillStars.push_back (s);
-        }
-        for (int i = 0; i < 150; ++i)
-        {
-            const float g = r() + r() + r() - 1.5f; // a rough bell curve across the band
-            const float x = std::round (r() * 1300.0f), y = std::round (100.0f + g * 60.0f);
-            milkyDots.push_back ({ x, y });
-            milkySizes.push_back (r() > 0.85f ? 1.5f : 1.0f);
-            milkyAlphas.push_back (0.25f + r() * 0.55f);
-        }
-        for (int i = 0; i < 56; ++i)
-        {
-            RainDrop d {};
-            d.period = 0.55f + r() * 0.4f;
-            d.x = std::round (r() * 1200.0f);
-            d.length = std::round (16.0f + r() * 14.0f);
-            d.opacity = 0.25f + r() * 0.3f;
-            d.delay = -r() * d.period;
-            rain.push_back (d);
         }
         for (int i = 0; i < 24; ++i)
         {
@@ -250,26 +229,6 @@ void NightSky::buildScene()
             f.eased = true;
             lights.push_back (f);
         }
-        const juce::Colour hues[] = { juce::Colour (0xffffffff), juce::Colour (0xffcfe0ff), juce::Colour (0xffcfe0ff), juce::Colour (0xfffff3c4),
-                                      juce::Colour (0xfffff3c4), juce::Colour (0xffffc38a), juce::Colour (0xffff8a7a) };
-        for (int i = 0; i < 90; ++i)
-        {
-            Dot s {};
-            s.colour = r.pick (hues);
-            s.size = r() > 0.88f ? 2.5f : r.pick ({ 1.0f, 1.5f, 2.0f });
-            const bool twinkles = i % 4 == 0;
-            const float period = std::round (4.0f + r() * 4.0f);
-            s.x = std::round (r() * 1040.0f);
-            s.y = std::round (r() * 480.0f);
-            s.opacity = 0.45f + r() * 0.5f;
-            s.glow = s.size > 2.0f ? 6.0f : 2.0f;
-            if (twinkles)
-            {
-                s.period = period;
-                s.delay = -r() * period;
-            }
-            deepStars.push_back (s);
-        }
         for (float a : { 125.0f, 150.0f, 178.0f, 205.0f, 232.0f, 258.0f })
         {
             const float radius = 150.0f + (r() - 0.5f) * 36.0f, t = juce::degreesToRadians (a);
@@ -281,31 +240,6 @@ void NightSky::buildScene()
             s.delay = -r() * s.period;
             s.colour = juce::Colour (0xfff4f8ff);
             moonGlints.push_back (s);
-        }
-    }
-
-    // Space Map: a dense field of fainter stars behind the bright ones.
-    {
-        Rng dz (31);
-        const juce::Colour fine[] = { juce::Colour (0xffffffff), juce::Colour (0xffffffff), juce::Colour (0xffdfe8ff),
-                                      juce::Colour (0xffcfe0ff), juce::Colour (0xfffff3c4), juce::Colour (0xffffd2a8) };
-        for (int i = 0; i < 200; ++i)
-        {
-            Dot s {};
-            s.size = dz() > 0.8f ? 1.5f : 1.0f;
-            const bool twinkles = i % 6 == 0;
-            const float period = std::round (3.0f + dz() * 5.0f);
-            s.x = std::round (dz() * 1040.0f);
-            s.y = std::round (dz() * 600.0f);
-            s.colour = dz.pick (fine);
-            s.opacity = 0.18f + dz() * 0.45f;
-            s.glow = 1.0f;
-            if (twinkles)
-            {
-                s.period = period;
-                s.delay = -dz() * period;
-            }
-            deepStars.push_back (s);
         }
     }
 
@@ -409,17 +343,6 @@ void NightSky::buildScene()
                                 { 150.0f, 30.0f, 240.0f,  90.0f, b2.withAlpha (0.14f), 18.0f } });
     wisps = { { 740.0f, 150.0f, 260.0f, 54.0f, juce::Colour (205, 212, 240).withAlpha (0.24f), 10.0f },
               { 860.0f, 128.0f, 150.0f, 46.0f, juce::Colour (220, 226, 250).withAlpha (0.20f), 8.0f } };
-
-    // Coil's storm clouds, in a band that sways across the top.
-    auto darkCloud = [] (float a) { return rgba (22, 26, 50, a); };
-    storm = { { 0, 10, 420, 170, darkCloud (0.75f), 26 }, { 300, -10, 460, 190, darkCloud (0.7f), 28 },
-              { 640, 20, 520, 200, darkCloud (0.72f), 28 }, { 860, 120, 300, 130, darkCloud (0.6f), 24 },
-              { 180, 120, 380, 110, darkCloud (0.5f), 22 }, { 520, 130, 360, 100, darkCloud (0.45f), 22 } };
-    for (auto& b : storm)
-    {
-        b.x -= 60.0f; // the band starts 60 left and 50 up
-        b.y -= 50.0f;
-    }
 }
 
 //==============================================================================
@@ -456,13 +379,9 @@ void NightSky::setInputs (const Inputs& in)
     switch (in.machine)
     {
         case nebula:     look.clouds = 0.35f; look.dark = 0.72f; break;
-        case coil:       look.dark = 0.38f; look.stars = 0.45f; break;
-        case sheet:      look.clouds = 0.0f; look.drop = 60.0f; look.boost = 1.5f; break;
-        case rise:       look.moon = 0.7f; look.stars = 0.75f; break;
         case blossom:    look.clouds = 0.0f; look.drop = 60.0f; break;
-        case haze:       look.stars = 0.65f; break;
+        case haze:       look.moon = 0.7f; look.stars = 0.65f; break; // the sunrise dims the moon
         case clearNight: look.clouds = 0.0f; look.drop = 60.0f; look.boost = 1.15f; break;
-        case spaceMap:   look.dark = 1.0f; look.clouds = 0.0f; look.drop = 60.0f; break;
         default: break;
     }
     if (in.bypass)
@@ -900,7 +819,7 @@ void NightSky::rebuildCaches (float pixelScale)
     sprites.clear();
     restImages.clear();
     baseImage = {};
-    baseKey = { -1.0f, -1.0f, -1.0f };
+    baseKey = -1.0f;
     moonTone = 1000;
 
     const juce::Rectangle<float> panel (0.0f, 0.0f, width, height);
@@ -932,17 +851,6 @@ void NightSky::rebuildCaches (float pixelScale)
         }
     }
 
-    // A rain streak: fades in from the top, 1 x 30 units.
-    {
-        streakSprite = juce::Image (juce::Image::SingleChannel, std::max (2, juce::roundToInt (2.0f * pixelScale)),
-                                    std::max (8, juce::roundToInt (30.0f * pixelScale)), true);
-        juce::Graphics g (streakSprite);
-        juce::ColourGradient fade (juce::Colours::transparentWhite, 0.0f, 0.0f, juce::Colours::white, 0.0f,
-                                   static_cast<float> (streakSprite.getHeight()), false);
-        g.setGradientFill (fade);
-        g.fillAll();
-    }
-
     // Everything below is drawn at a fixed resolution, so only build it once.
     if (cloudImageA.image.isValid())
         return;
@@ -951,88 +859,12 @@ void NightSky::rebuildCaches (float pixelScale)
     cloudImageB = renderBlobs (cloudsB, { -100.0f, 440.0f, 2100.0f, 280.0f }, kLowRes, true);
     wispImage   = renderBlobs (wisps, { 700.0f, 90.0f, 360.0f, 150.0f }, kMidRes, false);
 
-    // Pitch-black sky for Nebula, Coil, Space Map and bypass.
+    // Pitch-black sky for Nebula and bypass.
     darkSky = renderLayer (panel, kLowRes, 0.0f, [] (juce::Graphics& g)
     {
         ellipseGradient (g, { 0.0f, 0.0f, width, height }, { width * 0.5f, height * 0.3f }, width * 1.3f, height * 1.0f,
                          { { 0.0f, juce::Colour (0xff03040d) }, { 0.6f, juce::Colour (0xff020309) }, { 1.0f, juce::Colour (0xff010106) } });
     });
-
-    // Sheet: a cold blue tint and faint frost in the corners.
-    sheetTint = renderLayer (panel, kLowRes, 0.0f, [] (juce::Graphics& g)
-    {
-        verticalGradient (g, { 0.0f, 0.0f, width, height }, { { 0.0f, rgba (110, 170, 255, 0.2f) }, { 0.6f, rgba (150, 200, 255, 0.1f) },
-                                                             { 1.0f, rgba (200, 230, 255, 0.06f) } });
-    });
-    frost = renderLayer (panel, 1.0f, 0.0f, [] (juce::Graphics& g)
-    {
-        // Soft frost glows in each corner.
-        auto corner = [&g] (juce::Point<float> c, float rx, float ry, float a)
-        {
-            auto layer = juce::Image (juce::Image::ARGB, 220, 140, true);
-            ellipseGradient (g, { c.x - rx * 2.0f, c.y - ry * 2.0f, rx * 4.0f, ry * 4.0f }, c, rx, ry,
-                             { { 0.0f, rgba (235, 245, 255, a) }, { 0.55f, rgba (200, 225, 255, a * 0.33f) }, { 1.0f, rgba (200, 225, 255, 0.0f) } });
-        };
-        corner ({ 0.0f, 0.0f }, 62.0f, 32.0f, 0.24f);
-        corner ({ width, 0.0f }, 62.0f, 32.0f, 0.24f);
-        corner ({ 0.0f, height }, 66.0f, 36.0f, 0.14f);
-        corner ({ width, height }, 66.0f, 36.0f, 0.14f);
-
-        // Fine ice crystals growing in from the corners.
-        const auto crystal = juce::Drawable::parseSVGPath (
-            "M0 18L46 30L84 58L118 70L150 66M46 30L58 10M46 30L40 52M84 58L96 36M84 58L80 84M118 70L130 52M18 0L30 40L26 64"
-            "M30 40L52 46M26 64L12 76M8 92L36 104L50 132M36 104L60 100M50 132L68 140M150 18L176 28L196 22M164 23L168 6M100 120L112 136");
-        g.setColour (rgba (235, 246, 255, 0.35f));
-        const juce::PathStrokeType stroke (0.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
-        g.strokePath (crystal, stroke, juce::AffineTransform::scale (0.35f));
-        g.strokePath (crystal, stroke, juce::AffineTransform::scale (-0.35f, 0.35f).translated (width, 0.0f));
-        g.setColour (rgba (235, 246, 255, 0.21f));
-        g.strokePath (crystal, stroke, juce::AffineTransform::scale (0.3f, -0.3f).translated (0.0f, height));
-        g.strokePath (crystal, stroke, juce::AffineTransform::scale (-0.3f, -0.3f).translated (width, height));
-    });
-
-    // Arena: the Milky Way, a soft band with its dust lane and a scatter of faint stars,
-    // tilted 13 degrees. Its ends fade out.
-    {
-        const juce::Rectangle<float> band (0.0f, 0.0f, 1300.0f, 200.0f);
-        auto glow = renderLayer (band, kMidRes, 0.0f, [] (juce::Graphics&) {});
-        auto part = [&] (float blur, std::function<void (juce::Graphics&)> paint)
-        {
-            auto l = renderLayer (band, kMidRes, blur, paint);
-            juce::Graphics g (glow.image);
-            g.drawImageAt (l.image, 0, 0);
-        };
-        part (14.0f, [] (juce::Graphics& g)
-        {
-            ellipseGradient (g, { 0.0f, 50.0f, 1300.0f, 100.0f }, { 650.0f, 100.0f }, 650.0f, 50.0f,
-                             { { 0.0f, rgba (222, 228, 255, 0.17f) }, { 0.5f, rgba (200, 210, 250, 0.07f) },
-                               { 0.72f, rgba (200, 210, 250, 0.0f) }, { 1.0f, rgba (200, 210, 250, 0.0f) } });
-        });
-        part (12.0f, [] (juce::Graphics& g) { g.setColour (rgba (236, 232, 255, 0.12f)); g.fillEllipse (330.0f, 80.0f, 640.0f, 40.0f); });
-        part (5.0f, [] (juce::Graphics& g) { g.setColour (rgba (5, 7, 20, 0.4f)); g.fillEllipse (380.0f, 104.0f, 560.0f, 10.0f); });
-
-        milkyWay = renderLayer (band, 2.0f, 0.0f, [&] (juce::Graphics& g)
-        {
-            g.drawImageTransformed (glow.image, juce::AffineTransform::scale (1.0f / kMidRes));
-            for (size_t i = 0; i < milkyDots.size(); ++i)
-            {
-                g.setColour (juce::Colour (0xfff4f1ff).withAlpha (milkyAlphas[i]));
-                g.fillEllipse (milkyDots[i].x, milkyDots[i].y, milkySizes[i], milkySizes[i]);
-            }
-        });
-        // The CSS mask: transparent at the ends, solid from 18% to 82% across.
-        juce::Image::BitmapData bd (milkyWay.image, juce::Image::BitmapData::readWrite);
-        for (int x = 0; x < bd.width; ++x)
-        {
-            const float u = static_cast<float> (x) / static_cast<float> (bd.width);
-            const float m = juce::jlimit (0.0f, 1.0f, std::min (u / 0.18f, (1.0f - u) / 0.18f));
-            for (int y = 0; y < bd.height; ++y)
-            {
-                auto c = bd.getPixelColour (x, y);
-                bd.setPixelColour (x, y, c.withMultipliedAlpha (m));
-            }
-        }
-    }
 
     // Nebula: one image per cloud, so each can glow in its own time.
     // (Three groups rather than one image per cloud: far cheaper to draw, and still uneven.)
@@ -1083,22 +915,7 @@ void NightSky::rebuildCaches (float pixelScale)
         }
     }
 
-    // Chamber: warm lantern light from the lower left.
-    lantern = renderLayer ({ 0.0f, 260.0f, width, 360.0f }, kMidRes, 0.0f, [] (juce::Graphics& g)
-    {
-        const juce::Rectangle<float> a (0.0f, 260.0f, width, 360.0f);
-        ellipseGradient (g, a, { width * 0.22f, 620.0f }, width * 0.7f, 360.0f,
-                         { { 0.0f, rgba (255, 176, 90, 0.32f) }, { 0.4f, rgba (240, 130, 60, 0.15f) }, { 0.75f, rgba (200, 90, 40, 0.0f) }, { 1.0f, rgba (200, 90, 40, 0.0f) } });
-        ellipseGradient (g, a, { width * 0.8f, 620.0f }, width * 0.5f, 216.0f,
-                         { { 0.0f, rgba (255, 190, 110, 0.1f) }, { 0.7f, rgba (255, 190, 110, 0.0f) }, { 1.0f, rgba (255, 190, 110, 0.0f) } });
-    });
-    lanternFlicker = renderLayer ({ 0.0f, 260.0f, width, 360.0f }, kMidRes, 0.0f, [] (juce::Graphics& g)
-    {
-        ellipseGradient (g, { 0.0f, 260.0f, width, 360.0f }, { width * 0.22f, 620.0f }, width * 0.3f, 162.0f,
-                         { { 0.0f, rgba (255, 205, 130, 0.24f) }, { 0.7f, rgba (255, 205, 130, 0.0f) }, { 1.0f, rgba (255, 205, 130, 0.0f) } });
-    });
-
-    // Rise: a sunrise glowing up from below the horizon.
+    // Haze: a sunrise glowing up from below the horizon, through the mist.
     sunrise = renderLayer (panel, kMidRes, 0.0f, [] (juce::Graphics& g)
     {
         verticalGradient (g, { 0.0f, 0.0f, width, height }, { { 0.0f, rgba (255, 140, 90, 0.0f) }, { 0.25f, rgba (255, 140, 90, 0.0f) },
@@ -1127,36 +944,26 @@ void NightSky::rebuildCaches (float pixelScale)
                              { { 0.0f, rgba (205, 214, 238, m.a) }, { 0.7f, rgba (205, 214, 238, 0.0f) }, { 1.0f, rgba (205, 214, 238, 0.0f) } });
         }));
     }
-
-    // Coil: storm clouds overhead and a darker ground.
-    coilShade = renderLayer ({ 0.0f, 450.0f, width, 170.0f }, kLowRes, 0.0f, [] (juce::Graphics& g)
-    {
-        verticalGradient (g, { 0.0f, 450.0f, width, 170.0f }, { { 0.0f, rgba (12, 14, 30, 0.0f) }, { 1.0f, rgba (12, 14, 30, 0.5f) } });
-    });
-    stormImage = renderBlobs (storm, { -160.0f, -150.0f, 1360.0f, 460.0f }, kLowRes, true);
 }
 
 //==============================================================================
 void NightSky::drawBase (juce::Graphics& g)
 {
-    // The gradient, Coil and Space Map's darkening, Sheet's tint and Arena's Milky Way.
-    const std::array<float, 3> key { dark.at (now), themeAlpha (sheet), themeAlpha (arena) };
-    auto paintLayers = [this, &key] (juce::Graphics& lg)
+    // The gradient and the darkening for Nebula and bypass.
+    const float key = dark.at (now);
+    auto paintLayers = [this, key] (juce::Graphics& lg)
     {
         lg.drawImageTransformed (backdrop, juce::AffineTransform::scale (1.0f / cachedScale));
-        drawCached (lg, darkSky, key[0]);
-        drawCached (lg, sheetTint, key[1]);
-        drawCached (lg, milkyWay, key[2], juce::AffineTransform::translation (-130.0f, 100.0f)
-                                                .rotated (juce::degreesToRadians (-13.0f), 520.0f, 200.0f));
+        drawCached (lg, darkSky, key);
     };
 
-    // While those are fading, draw them as they are; once still, flatten them into one image.
-    if (! (dark.settled (now) && atRest (sheet) && atRest (arena)))
+    // While the darkening is fading, draw it as it is; once still, flatten it into one image.
+    if (! dark.settled (now))
     {
         paintLayers (g);
         return;
     }
-    if (key != baseKey || ! baseImage.isValid())
+    if (! juce::exactlyEqual (key, baseKey) || ! baseImage.isValid())
     {
         baseImage = juce::Image (juce::Image::ARGB, backdrop.getWidth(), backdrop.getHeight(), false);
         juce::Graphics bg (baseImage);
@@ -1202,7 +1009,6 @@ void NightSky::draw (juce::Graphics& g)
     // The ordinary stars, dimmed or brightened by the theme.
     drawDots (g, stars, starAlpha.at (now) * starBoost.at (now), tw);
     drawDots (g, stillStars, on (clearNight), tw);
-    drawDots (g, deepStars, on (spaceMap), tw);
 
     // Halo: Shimmer fills the sky with quick stars, then glitter near the top of its range.
     if (const float a = on (halo); a > 0.002f)
@@ -1241,21 +1047,6 @@ void NightSky::draw (juce::Graphics& g)
 
     drawMoon (g, moonAlpha.at (now));
 
-    // Chamber's lantern rises into place and flickers.
-    if (const float a = on (chamber); a > 0.002f)
-    {
-        const auto lift = juce::AffineTransform::translation (0.0f, 90.0f * (1.0f - a));
-        const bool rest = atRest (chamber);
-        rest ? drawAtRest (g, lantern, a) : drawCached (g, lantern, a, lift);
-        const float u = cycle (t, 5.0f, 0.0f);
-        const float flick = ! motion ? 0.85f
-                          : u < 0.3f ? 0.85f + 0.15f * easeInOut (u / 0.3f)
-                          : u < 0.55f ? 1.0f - 0.3f * easeInOut ((u - 0.3f) / 0.25f)
-                          : u < 0.8f ? 0.7f + 0.25f * easeInOut ((u - 0.55f) / 0.25f)
-                          : 0.95f - 0.1f * easeInOut ((u - 0.8f) / 0.2f);
-        rest ? drawAtRest (g, lanternFlicker, a * flick) : drawCached (g, lanternFlicker, a * flick, lift);
-    }
-
     // Clouds: wisps by the moon and two layers rolling along the bottom.
     if (const float a = clouds.at (now); a > 0.002f)
     {
@@ -1278,14 +1069,11 @@ void NightSky::draw (juce::Graphics& g)
         }
     }
 
-    // Rise: the sun's glow comes up from below.
-    if (const float a = on (rise); a > 0.002f)
-        atRest (rise) ? drawAtRest (g, sunrise, a) : drawCached (g, sunrise, a, juce::AffineTransform::translation (0.0f, 120.0f * (1.0f - a)));
-
-    // Haze: mist bands drift slowly to and fro.
+    // Haze: the sun's glow comes up from below, and mist bands drift slowly to and fro.
     if (const float a = on (haze); a > 0.002f)
     {
         const bool rest = atRest (haze);
+        rest ? drawAtRest (g, sunrise, a) : drawCached (g, sunrise, a, juce::AffineTransform::translation (0.0f, 120.0f * (1.0f - a)));
         rest ? drawAtRest (g, hazeTint, a) : drawCached (g, hazeTint, a);
         constexpr float periods[] = { 46, 38, 52, 34 }, delays[] = { -10, -20, -5, -14 };
         for (size_t i = 0; i < mistImages.size(); ++i)
@@ -1294,50 +1082,6 @@ void NightSky::draw (juce::Graphics& g)
             const float x = -90.0f + 180.0f * s;
             rest ? drawAtRest (g, mistImages[i], a, { x, 0.0f })
                  : drawCached (g, mistImages[i], a, juce::AffineTransform::translation (x, 0.0f));
-        }
-    }
-
-    // Coil: storm clouds, rain and the odd drip.
-    if (const float a = on (coil); a > 0.002f)
-    {
-        const float sway = motion ? -70.0f + 110.0f * alternate (t, 9.0f, -3.0f) : 0.0f;
-        if (atRest (coil))
-        {
-            drawAtRest (g, coilShade, a);
-            drawAtRest (g, stormImage, a, { sway, 0.0f });
-        }
-        else
-        {
-            drawCached (g, coilShade, a);
-            drawCached (g, stormImage, a, juce::AffineTransform::translation (sway, 0.0f));
-        }
-
-        const float upp = 1.0f / cachedScale;
-        for (const auto& d : rain)
-        {
-            const float u = motion ? cycle (t, d.period, d.delay) : 0.5f;
-            const float x = d.x - 130.0f * u, y = -40.0f + 740.0f * u;
-            g.setColour (rgba (200, 218, 255, d.opacity * a));
-            drawTinted (g, streakSprite, juce::AffineTransform::scale (upp, upp * d.length / 30.0f)
-                                                      .rotated (juce::degreesToRadians (10.0f))
-                                                      .translated (x, y));
-        }
-        struct Drip { float x, period, delay; };
-        for (auto drip : { Drip { 304.0f, 7.0f, -1.0f }, Drip { 690.0f, 11.0f, -6.0f } })
-        {
-            if (! motion)
-                break;
-            const float u = cycle (t, drip.period, drip.delay);
-            float y = 0.0f, sx = 1.0f, sy = 1.0f, op = 0.0f;
-            if (u < 0.12f)      { const float k = u / 0.12f; y = -8.0f + 4.0f * k; sx = sy = 0.3f + 0.3f * k; op = 0.85f * k; }
-            else if (u < 0.6f)  { const float k = (u - 0.12f) / 0.48f; y = -4.0f + 4.0f * k; sx = sy = 0.6f + 0.4f * k; op = 0.85f; }
-            else if (u < 0.66f) { const float k = (u - 0.6f) / 0.06f; y = 4.0f * k; sx = 1.0f - 0.1f * k; sy = 1.0f + 0.3f * k; op = 0.85f; }
-            else if (u < 0.82f) { const float k = easeIn ((u - 0.66f) / 0.16f); y = 4.0f + 636.0f * k; sx = 0.9f - 0.2f * k; sy = 1.3f + 0.2f * k; op = 0.8f; }
-            if (op > 0.0f)
-            {
-                g.setColour (rgba (205, 222, 255, 0.8f * op * a));
-                g.fillEllipse (juce::Rectangle<float> (4.0f * sx, 6.0f * sy).withCentre ({ drip.x + 2.0f, y + 3.0f }));
-            }
         }
     }
 
@@ -1350,14 +1094,6 @@ void NightSky::draw (juce::Graphics& g)
         for (const auto& f : lights)
             if (const float show = juce::jlimit (0.0f, 1.0f, (feedbackLevel - f.level) * 25.0f + 1.0f); show > 0.0f)
                 drawRiser (g, f, a * show);
-    }
-
-    // Sheet's frost settles in from just outside the frame.
-    if (const float a = on (sheet); a > 0.002f)
-    {
-        const float s = 1.25f - 0.25f * a;
-        atRest (sheet) ? drawAtRest (g, frost, a)
-                       : drawCached (g, frost, a, juce::AffineTransform::scale (s, s, width * 0.5f, height * 0.5f));
     }
 }
 

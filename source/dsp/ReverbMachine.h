@@ -34,8 +34,8 @@ public:
     // as the echo time), so the engine skips its own pre-delay.
     virtual bool consumesPreDelay() const noexcept { return false; }
 
-    // Optional per-sample gain for the dry signal for the block just processed (Rise uses
-    // it to swell the dry signal too). nullptr means the dry signal is untouched.
+    // Optional per-sample gain for the dry signal for the block just processed (the old Rise
+    // machine used it to swell the dry signal too). nullptr means the dry signal is untouched.
     virtual const float* dryEnvelope() const noexcept { return nullptr; }
 };
 

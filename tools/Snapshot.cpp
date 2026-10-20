@@ -22,7 +22,7 @@ int main (int argc, char* argv[])
 
     const juce::File outDir (argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile (argv[1])
                                       : juce::File::getCurrentWorkingDirectory());
-    const int preset = argc > 2 ? juce::String (argv[2]).getIntValue() : 8;
+    const int preset = argc > 2 ? juce::String (argv[2]).getIntValue() : 3;
     const double seconds = argc > 3 ? juce::String (argv[3]).getDoubleValue() : 0.0;
     const double fps = argc > 4 ? juce::String (argv[4]).getDoubleValue() : 20.0;
     const float scale = argc > 5 ? juce::String (argv[5]).getFloatValue() : 1.0f;
