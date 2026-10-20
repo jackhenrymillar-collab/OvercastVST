@@ -15,8 +15,7 @@ using namespace overcast::test;
 
 namespace
 {
-    const char* kNames[kNumMachines] = { "Chamber", "Arena", "Sheet", "Coil", "Rise", "Blossom",
-                                         "Haze", "Aurora", "Halo", "Nebula", "Clear Night", "Space Map" };
+    const char* kNames[kNumMachines] = { "Blossom", "Haze", "Aurora", "Halo", "Nebula", "Clear Night" };
 
     MachineParams defaults()
     {
@@ -160,7 +159,7 @@ TEST_CASE ("Freeze never makes a tail grow, and holds it on sustaining machines"
 
 TEST_CASE ("Hall-type machines decay at the Decay setting")
 {
-    const int id = GENERATE (static_cast<int> (MachineId::arena), static_cast<int> (MachineId::haze),
+    const int id = GENERATE (static_cast<int> (MachineId::clearNight), static_cast<int> (MachineId::haze),
                              static_cast<int> (MachineId::aurora));
     const float target = GENERATE (1.5f, 4.0f);
     const double fs = 48000.0;
@@ -204,41 +203,36 @@ TEST_CASE ("Machines are loudness matched")
         levels[id] = rmsDb (out.l, out.r, static_cast<std::size_t> (0.5 * fs), out.l.size())
                    + 20.0 * std::log10 (kMachineTrim[id]);
     }
-    const double reference = levels[static_cast<int> (MachineId::sheet)];
+    // Compared with the average of all machines (the trims were first set against the
+    // old Sheet plate).
+    double reference = 0.0;
+    for (int id = 0; id < kNumMachines; ++id)
+        reference += levels[id] / kNumMachines;
     for (int id = 0; id < kNumMachines; ++id)
     {
         // Printed so the trims in Machines.h can be recalibrated after a voicing change.
-        std::printf ("loudness %-10s %+6.2f dB vs Sheet (suggested trim %.3f)\n", kNames[id], levels[id] - reference,
+        std::printf ("loudness %-12s %+6.2f dB vs the average (suggested trim %.3f)\n", kNames[id], levels[id] - reference,
                      kMachineTrim[id] * std::pow (10.0, (reference - levels[id]) / 20.0));
-        INFO (kNames[id] << " is " << levels[id] - reference << " dB from Sheet");
+        INFO (kNames[id] << " is " << levels[id] - reference << " dB from the average");
         CHECK (std::abs (levels[id] - reference) < 2.0);
     }
 }
 
 // A tail that rings at fixed pitches sounds metallic. That shows up in the impulse
 // response as echoes that repeat at a fixed spacing, so the strongest repeat (the
-// autocorrelation peak) has to stay small. Sheet and Haze measure 0.12 to 0.15;
-// Chamber and Space Map used to measure 0.3 to 0.45. Coil (spring drip) repeats on
-// purpose and is left out.
+// autocorrelation peak) has to stay small. Haze measures 0.12 to 0.15; the old small
+// rooms used to measure 0.3 to 0.45.
 TEST_CASE ("Tails don't ring with repeating echoes")
 {
     struct Setting { int id; float param1; float decay; float param2 = 0.5f; };
     const auto setting = GENERATE (
-        Setting { static_cast<int> (MachineId::chamber), 0.0f, 1.4f },
-        Setting { static_cast<int> (MachineId::chamber), 0.5f, 1.4f },
-        Setting { static_cast<int> (MachineId::chamber), 1.0f, 3.0f },
-        Setting { static_cast<int> (MachineId::spaceMap), 0.0f, 1.8f },
-        Setting { static_cast<int> (MachineId::spaceMap), 0.6f, 1.8f },
         Setting { static_cast<int> (MachineId::clearNight), 0.0f, 3.0f },
         Setting { static_cast<int> (MachineId::clearNight), 1.0f, 3.0f },
         Setting { static_cast<int> (MachineId::nebula), 0.0f, 3.0f, 0.0f },
         Setting { static_cast<int> (MachineId::nebula), 1.0f, 3.0f, 1.0f },
         Setting { static_cast<int> (MachineId::aurora), 0.0f, 3.0f, 0.0f },
         Setting { static_cast<int> (MachineId::aurora), 1.0f, 3.0f, 1.0f },
-        Setting { static_cast<int> (MachineId::sheet), 0.5f, 3.0f },
         Setting { static_cast<int> (MachineId::haze), 0.5f, 3.0f },
-        Setting { static_cast<int> (MachineId::arena), 0.0f, 3.0f },
-        Setting { static_cast<int> (MachineId::arena), 1.0f, 3.0f },
         Setting { static_cast<int> (MachineId::blossom), 0.5f, 3.0f },
         Setting { static_cast<int> (MachineId::halo), 0.5f, 3.0f });
 
@@ -320,32 +314,10 @@ TEST_CASE ("Nebula is dense from the start")
             sum += echoDensity (out.l, static_cast<std::size_t> (t * fs), half);
         return sum / 4.0;
     };
-    const double nebula = early (MachineId::nebula), arena = early (MachineId::arena);
-    INFO ("early echo density: Nebula " << nebula << ", Arena " << arena);
+    const double nebula = early (MachineId::nebula), haze = early (MachineId::haze);
+    INFO ("early echo density: Nebula " << nebula << ", Haze " << haze);
     CHECK (nebula > 0.55);
-    CHECK (nebula > arena + 0.25);
-}
-
-TEST_CASE ("Rise swells the dry signal in wet-and-dry mode")
-{
-    const double fs = 48000.0;
-    auto p = defaults();
-    p.param1 = 0.4f;  // rise time about 0.25 s
-    p.param2 = 1.0f;  // swell the dry signal too
-    auto m = make (static_cast<int> (MachineId::rise), fs, p);
-    std::vector<float> tone (256), l (256), r (256);
-    float early = 0.0f, late = 0.0f;
-    for (int b = 0; b < 200; ++b) // about 1 s of a steady note
-    {
-        for (std::size_t i = 0; i < tone.size(); ++i)
-            tone[i] = 0.3f * std::sin (0.05f * static_cast<float> (b * 256 + static_cast<int> (i)));
-        m->process (tone.data(), tone.data(), l.data(), r.data(), 256);
-        REQUIRE (m->dryEnvelope() != nullptr);
-        if (b == 1) early = m->dryEnvelope()[0];
-        if (b == 199) late = m->dryEnvelope()[255];
-    }
-    CHECK (early < 0.1f);
-    CHECK (late == Catch::Approx (1.0f));
+    CHECK (nebula > haze + 0.25);
 }
 
 TEST_CASE ("Switching machines never clips or produces NaN, with and without spillover")
@@ -395,13 +367,11 @@ TEST_CASE ("Moving knobs that change delay lengths doesn't click or zip")
     // above 5 kHz (an 8th-order highpass) must stay quiet.
     enum Knob { first, second, decay };
     struct Case { int machine; Knob knob; };
-    const auto c = GENERATE (Case { 0, first },    // Chamber size
-                             Case { 11, first },   // Space Map size
-                             Case { 1, decay },    // Arena decay
-                             Case { 7, first },    // Aurora size
-                             Case { 7, decay },    // Aurora decay
-                             Case { 9, second },   // Nebula softness
-                             Case { 10, first });  // Clear Night size
+    const auto c = GENERATE (Case { 2, first },    // Aurora size
+                             Case { 2, decay },    // Aurora decay
+                             Case { 4, second },   // Nebula softness
+                             Case { 5, first },    // Clear Night size
+                             Case { 5, decay });   // Clear Night decay
     const int machine = c.machine;
     CAPTURE (kNames[machine], static_cast<int> (c.knob));
     const double fs = 48000.0;
@@ -501,18 +471,12 @@ static double ringingPitches (const std::vector<float>& x, double fs, double sta
 }
 
 // Long decays used to ring at separate pitches below 1 kHz, right where piano notes
-// sit (Chamber and Space Map measured 5 to 10 at 9 s, with Mod at 30% or off; Coil 14).
-// The networks' mixing matrices now turn further as the decay grows, Sheet's tank halves
-// are mixed by slowly turning rotations, and Aurora keeps a little slow modulation. Coil
-// is left as a plain spring tank: mixing its springs took away the spring sound.
+// sit (the old small rooms measured 5 to 10 at 9 s, with Mod at 30% or off). The
+// networks' mixing matrices now turn further as the decay grows, and Aurora keeps a
+// little slow modulation.
 TEST_CASE ("Long tails don't ring at separate pitches")
 {
-    const auto id = GENERATE (static_cast<int> (MachineId::chamber), static_cast<int> (MachineId::arena),
-                              static_cast<int> (MachineId::rise), static_cast<int> (MachineId::blossom),
-                              static_cast<int> (MachineId::haze), static_cast<int> (MachineId::halo),
-                              static_cast<int> (MachineId::nebula), static_cast<int> (MachineId::clearNight),
-                              static_cast<int> (MachineId::spaceMap), static_cast<int> (MachineId::sheet),
-                              static_cast<int> (MachineId::aurora));
+    const auto id = GENERATE (range (0, kNumMachines));
     const float mod = GENERATE (0.0f, 0.3f);
 
     const double fs = 16000.0;
@@ -542,16 +506,11 @@ TEST_CASE ("Long tails don't ring at separate pitches")
 
 // Low-mid resonance, 150 to 700 Hz, where Jack asked for the least ringing. Measured on
 // an impulse (no notes of its own) at 9 s of decay and Mod 30, averaged over five 2 s
-// slices from 1 to 7 s: a smooth noise-like tail scores about 1. Chamber, Sheet,
-// Blossom, Halo and Space Map sweep a low-mid allpass in long tails to keep it down.
+// slices from 1 to 7 s: a smooth noise-like tail scores about 1. Blossom and Halo
+// sweep a low-mid allpass in long tails to keep it down.
 TEST_CASE ("Long tails don't resonate between 150 and 700 Hz")
 {
-    const auto id = GENERATE (static_cast<int> (MachineId::chamber), static_cast<int> (MachineId::arena),
-                              static_cast<int> (MachineId::sheet), static_cast<int> (MachineId::rise),
-                              static_cast<int> (MachineId::blossom), static_cast<int> (MachineId::haze),
-                              static_cast<int> (MachineId::aurora), static_cast<int> (MachineId::halo),
-                              static_cast<int> (MachineId::nebula), static_cast<int> (MachineId::clearNight),
-                              static_cast<int> (MachineId::spaceMap));
+    const auto id = GENERATE (range (0, kNumMachines));
     const double fs = 16000.0;
     auto p = defaults();
     p.decaySeconds = 9.0f;
@@ -569,6 +528,24 @@ TEST_CASE ("Long tails don't resonate between 150 and 700 Hz")
     for (double t : { 1.0, 2.0, 3.0, 4.0, 5.0 })
         score += 0.1 * (ringingPitches (sum, fs, t, 150.0, 300.0) + ringingPitches (sum, fs, t, 300.0, 700.0));
     INFO (kNames[id] << ": " << score);
-    // Measured 1.05 to 1.8 (Sheet 2.3: a plate tank has only two loops).
-    CHECK (score < (id == static_cast<int> (MachineId::sheet) ? 2.6 : 2.0));
+    // Measured 1.05 to 1.8.
+    CHECK (score < 2.0);
+}
+
+TEST_CASE ("Sessions from the old twelve-machine list open on the closest machine left")
+{
+    // Old order: Chamber, Arena, Sheet, Coil, Rise, Blossom, Haze, Aurora, Halo, Nebula,
+    // Clear Night, Space Map.
+    const MachineId expected[] = { MachineId::clearNight, MachineId::clearNight, MachineId::clearNight,
+                                   MachineId::clearNight, MachineId::haze,       MachineId::blossom,
+                                   MachineId::haze,       MachineId::aurora,     MachineId::halo,
+                                   MachineId::nebula,     MachineId::clearNight, MachineId::nebula };
+    for (int old = 0; old < 12; ++old)
+    {
+        CAPTURE (old);
+        CHECK (migrateMachineIndex (old) == static_cast<int> (expected[old]));
+        CHECK (oldMachineKept (old) == (old >= 5 && old <= 10));
+    }
+    CHECK (migrateMachineIndex (-1) == static_cast<int> (MachineId::aurora));
+    CHECK (migrateMachineIndex (40) == static_cast<int> (MachineId::aurora));
 }

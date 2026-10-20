@@ -6,35 +6,35 @@ using overcast::MachineMemory;
 
 TEST_CASE ("Each machine keeps its own knob settings")
 {
-    MachineMemory memory (12);
+    MachineMemory memory (6);
     memory.setCurrent (1);
 
-    const MachineMemory::Knobs arena { 5.0f, 30.0f, 35.0f, -10.0f, 45.0f, 60.0f, 40.0f };
+    const MachineMemory::Knobs haze { 5.0f, 30.0f, 35.0f, -10.0f, 45.0f, 60.0f, 40.0f };
     const MachineMemory::Knobs nebula { 10.0f, 20.0f, 45.0f, -10.0f, 40.0f, 50.0f, 60.0f };
-    memory.store (9, nebula);
+    memory.store (4, nebula);
 
-    // Leaving Arena stores its knobs and hands back Nebula's.
-    auto restored = memory.switchTo (9, arena);
+    // Leaving Haze stores its knobs and hands back Nebula's.
+    auto restored = memory.switchTo (4, haze);
     REQUIRE (restored.has_value());
     CHECK (*restored == nebula);
-    CHECK (memory.current() == 9);
+    CHECK (memory.current() == 4);
 
-    // Edit a knob on Nebula, then go back to Arena: Arena is as it was.
+    // Edit a knob on Nebula, then go back to Haze: Haze is as it was.
     auto edited = nebula;
     edited[5] = 90.0f;
     restored = memory.switchTo (1, edited);
     REQUIRE (restored.has_value());
-    CHECK (*restored == arena);
+    CHECK (*restored == haze);
 
     // And Nebula remembers the edit.
-    restored = memory.switchTo (9, arena);
+    restored = memory.switchTo (4, haze);
     REQUIRE (restored.has_value());
     CHECK ((*restored)[5] == 90.0f);
 }
 
 TEST_CASE ("A machine with nothing stored keeps the current knobs")
 {
-    MachineMemory memory (12);
+    MachineMemory memory (6);
     memory.setCurrent (0);
     const MachineMemory::Knobs knobs { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f };
     CHECK_FALSE (memory.switchTo (4, knobs).has_value());

@@ -19,7 +19,7 @@ enum class MixLaw
 
 struct EngineParams
 {
-    int machine = static_cast<int> (MachineId::sheet);
+    int machine = static_cast<int> (MachineId::aurora);
     MachineParams machineParams;
     float preDelayMs = 20.0f;     // 0 to 500 ms
     float mix = 0.35f;            // 0 to 1
@@ -63,7 +63,7 @@ private:
     int maxBlock = 0;
 
     std::array<std::unique_ptr<ReverbMachine>, kNumMachines> machines;
-    int active = static_cast<int> (MachineId::sheet);
+    int active = static_cast<int> (MachineId::aurora);
     int previous = -1;           // machine fading out or spilling over, -1 if none
     bool previousSpills = false; // true: rings out naturally; false: 30 ms fade
     float fadeIn = 1.0f, fadeOut = 0.0f, fadeStep = 0.0f;

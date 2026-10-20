@@ -12,8 +12,8 @@ namespace overcast::ui
 {
 
 // The animated sky behind the controls: gradient, moon, twinkling stars, rare
-// shooting stars, rolling clouds, and a theme for each machine (lantern light for
-// Chamber, rain for Coil, a sunrise for Rise, northern lights for Aurora and so on).
+// shooting stars, rolling clouds, and a theme for each machine (a sunrise through the
+// mist for Haze, northern lights for Aurora, a nebula for Nebula and so on).
 //
 // Switching machine cross-fades the themes over 3 s and glides the moon to that
 // machine's phase. Bypass leaves a new moon over a pitch-black, stars-only sky.
@@ -27,12 +27,12 @@ class NightSky
 {
 public:
     static constexpr float width = 1040.0f, height = 620.0f;
-    static constexpr int numMachines = 12;
+    static constexpr int numMachines = 6;
 
     // What the sky shows. The panel fills this in every frame.
     struct Inputs
     {
-        int machine = 2;
+        int machine = 2; // Aurora
         bool bypass = false;
         float tone = 0.0f;      // -1 (blood moon) .. 0 (cream) .. 1 (white)
         float shimmer = 0.5f;   // Halo's Shimmer knob, 0..1
@@ -88,12 +88,11 @@ private:
     };
 
     struct Sparkle { float x, y, size, period, delay, level; juce::Colour colour; };
-    struct RainDrop { float x, length, opacity, period, delay; };
     struct ShootingStar { double start; juce::Point<float> from; float length, angle; };
     struct Blob { float x, y, w, h; juce::Colour colour; float blur; float rotation = 0.0f; };
     struct Cached { juce::Image image; juce::Rectangle<float> area; float resolution = 1.0f; };
 
-    enum Machine { chamber, arena, sheet, coil, rise, blossom, haze, aurora, halo, nebula, clearNight, spaceMap };
+    enum Machine { blossom, haze, aurora, halo, nebula, clearNight };
 
     void buildScene();
     void rebuildCaches (float pixelScale);
@@ -119,13 +118,10 @@ private:
     float themeAlpha (int machine) const { return themeFade[static_cast<size_t> (machine)].at (now); }
 
     // Scene contents, built once from fixed seeds so the sky always looks the same.
-    std::vector<Dot> stars, dust, stillStars, deepStars, shimmerStars;
+    std::vector<Dot> stars, dust, stillStars, shimmerStars;
     std::vector<Sparkle> glitter, moonGlints;
     std::vector<Riser> lights, motes;
-    std::vector<RainDrop> rain;
-    std::vector<Blob> cloudsA, cloudsB, wisps, storm, nebulaBlobs;
-    std::vector<juce::Point<float>> milkyDots;
-    std::vector<float> milkySizes, milkyAlphas;
+    std::vector<Blob> cloudsA, cloudsB, wisps, nebulaBlobs;
 
     std::optional<ShootingStar> shooting;
     double nextShootingStar = 0.0;
@@ -148,15 +144,14 @@ private:
     int moonTone = 1000;
     juce::Image backdrop, moonDisc, moonGlow;
     std::map<int, juce::Image> sprites;
-    juce::Image streakSprite, sparkleSprite;
-    Cached cloudImageA, cloudImageB, wispImage, darkSky, sheetTint, frost, milkyWay, haloRing,
-           lantern, lanternFlicker, sunrise, hazeTint, coilShade, stormImage;
+    juce::Image sparkleSprite;
+    Cached cloudImageA, cloudImageB, wispImage, darkSky, haloRing, sunrise, hazeTint;
     std::vector<Cached> nebulaImages, auroraImages, mistImages;
 
     // Screen-resolution copies for layers at rest, and the flattened base of the sky.
     std::map<const Cached*, juce::Image> restImages;
     juce::Image baseImage;
-    std::array<float, 3> baseKey { -1.0f, -1.0f, -1.0f };
+    float baseKey = -1.0f;
 };
 
 } // namespace overcast::ui

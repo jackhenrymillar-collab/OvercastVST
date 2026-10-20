@@ -208,13 +208,13 @@ public:
     }
 
     // Smooth random drift in place of the sine wobble on each line (see DriftLfo). By ear
-    // and by ringing score it only helped Space Map, so it is off unless a machine asks.
+    // and by ringing score it only helped the old Space Map, so it is off unless a machine asks (none does now).
     void setRandomDrift (bool on) noexcept { useDrift = on; }
 
     // Scales the extra movement long tails get (the faster rotation and the delay drift
     // from 3 s to 8 s of decay). 1 is the "Middle" setting; machines whose long tails
     // still ring ask for a little more. capDrift false keeps the full delay drift instead of
-    // capping it at kMaxTailCents (Arena: Jack preferred it uncapped by ear).
+    // capping it at kMaxTailCents (the old Arena: Jack preferred it uncapped by ear).
     void setTailMovement (float amount, bool capDrift = true)
     {
         tailMovement = std::max (0.0f, amount);
@@ -439,7 +439,7 @@ private:
     // Long-tail pitch drift stays within the "lush but not wobbly" range (3 to 8 cents is
     // the usual target; 10 to 30 cents reads as chorus). Capping it and turning the
     // rotation faster by the same factor kept ringing scores level on average (3.06 vs
-    // 3.08 over Chamber, Arena, Rise and Halo), with less pitch bend.
+    // 3.08 over the old Chamber, Arena and Rise, and Halo), with less pitch bend.
     static constexpr float kMaxTailCents = 8.0f;
     float maxTailDriftMs = 1.27f;
     bool driftCapped = true;
