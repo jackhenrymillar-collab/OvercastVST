@@ -43,6 +43,10 @@ SIL Open Font License.
 Aurora's reverb core follows Cloud Seed by Ghost Note Audio (MIT licence). Overcast is not
 made by or affiliated with Ghost Note Audio; see `THIRD_PARTY_NOTICES.md`.
 
+Halo's shimmer follows ShimmerVerb by Danial Kooshki (MIT licence), around a Zita-Rev1
+style network (Fons Adriaensen's design). Overcast is not made by or affiliated with
+either; see `THIRD_PARTY_NOTICES.md`.
+
 ## Building on macOS
 
 Requirements: Xcode 15 or later (command line tools are enough) and CMake 3.22+.
@@ -127,7 +131,7 @@ CI also runs `auval` and `pluginval` (strictness 10, including its editor tests)
 | Blossom | Tail that grows after the attack | Bloom length | Bloom feedback |
 | Haze | Huge ambient wash | Diffusion | Smear |
 | Aurora | Cloud Seed style: 8 parallel delay lines per side, each with modulated diffusers in its loop | Size (30 to 300 ms) | Diffusion (echoes to cloud) |
-| Halo | Shimmer | Interval (-12, +5, +7, +12, +19) | Shimmer amount |
+| Halo | ShimmerVerb style: a Zita-Rev1 style 8-line network fed back through band-limited granular pitch shifters | Interval (-12, +7, +12, +12/+7, +12/+19) | Shimmer amount |
 | Nebula | Velvet-noise network, dense from the first moment | Darkness | Softness (quick wash to slow bloom) |
 | Clear Night | Colourless hall with optimised delay tuning | Size (0.6x to 1.6x) | Brightness |
 | Space Map | Modelled room reflections | Room shape (small room to long hall) | Listener distance |
@@ -136,7 +140,7 @@ Notes:
 - Machines built on a feedback network (all but Sheet, Coil and Aurora) slowly rotate their feedback matrix, so the Mod knob smooths the tail without detuning it much.
 - Long decays keep their tails smooth on their own: from 3 s to 8 s of Decay (and whenever frozen) the matrix rotation swings further whatever Mod is set to, turning up to twice its usual slow rates (at most 0.8 Hz), and the delays drift by up to 1 ms. A still network's long tail otherwise splits into separate pitches that ring on, worst below 500 Hz. This "Middle" setting was picked by ear: much faster turning makes held notes swirl, slower lets low notes ring.
 - Every loop line has its own frequency-dependent damping (low, mid and high decay times per line), and every machine except Coil has an input diffusion network separate from its loop: short allpass cascades (all under 10 ms), Sheet's Dattorro input allpasses, or Nebula's velvet-noise filters. Coil has none on purpose, as a real spring tank doesn't.
-- The shimmer pitch shifter (Halo) uses smooth power-complementary grain windows (zero slope at the grain edges, so no clicks) and corrects its overlap-add gain by how alike its two heads are, so its level holds steady with no flutter at the grain rate. Machine switches use equal-power crossfades, so the level doesn't dip halfway.
+- Halo's shimmer uses four-voice granular pitch shifters with Hann windows a quarter grain apart and random start points; the overlap-add gain is normalised so the level holds steady with no flutter at the grain rate. Its loop gain is set from the reverb's measured energy, and the reverb's own decay is shortened by the measured amount the shimmer stretches it, so the tail matches the Decay knob at any Shimmer setting. Machine switches use equal-power crossfades, so the level doesn't dip halfway.
 - Sheet and Aurora get the same treatment their own way: Sheet's two tank halves cross through slowly turning lossless mixes, and Aurora keeps a little of its slow modulation. Both ramp in from 3 s to 8 s of Decay, so short settings sound as before. Coil stays a plain spring tank.
 - Delay lines in every network machine are prime sample counts at 48 kHz, with no two lines near a 2:1, 3:2 or 4:3 ratio, so their resonances never stack. (Clear Night keeps its optimised set, which is already prime.)
 - Input diffusers are cascades of short allpasses, all under 10 ms (six per side in most machines, twelve in Haze), so they thicken the attack without a metallic tone. Blossom's in-loop diffusers follow the same rule. Sheet keeps Dattorro's long tank allpasses, which make the plate sound.

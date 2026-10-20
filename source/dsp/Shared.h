@@ -87,9 +87,11 @@ template <std::size_t N>
 class Fdn
 {
 public:
-    void prepare (double sampleRate, float maxDelayMs)
+    // maxLoopAllpassMs: the longest in-loop allpass this network will be given.
+    void prepare (double sampleRate, float maxDelayMs, float maxLoopAllpassMs = 8.0f)
     {
         fs = sampleRate;
+        maxLoopAllpass = maxLoopAllpassMs;
         maxDelay = msToSamples (maxDelayMs, fs) + msToSamples (kMaxModMs, fs) + 8.0f;
         for (std::size_t i = 0; i < N; ++i)
         {
@@ -109,7 +111,7 @@ public:
         }
         for (std::size_t i = 0; i < N; ++i)
         {
-            loopAllpass[i].prepare (static_cast<std::size_t> (msToSamples (kMaxLoopAllpassMs, fs)) + 2);
+            loopAllpass[i].prepare (static_cast<std::size_t> (msToSamples (maxLoopAllpass, fs)) + 2);
             loopAllpassDelay[i].prepare (fs, 60.0f);
         }
         inputGain.prepare (fs, 50.0f);
@@ -171,10 +173,10 @@ public:
     // Optional allpass inside each feedback path. Short networks (small rooms) otherwise
     // have too few echo paths and ring at individual pitches; an allpass per line multiplies
     // the echo density and spreads the modes without changing the tone or the decay.
-    // Gain 0 turns it off. Delays are in milliseconds, up to kMaxLoopAllpassMs.
+    // Gain 0 turns it off. Delays are in milliseconds, up to the maximum given to prepare.
     void setLoopAllpasses (const std::array<float, N>& ms, float gain)
     {
-        const float maxSamples = msToSamples (kMaxLoopAllpassMs, fs);
+        const float maxSamples = msToSamples (maxLoopAllpass, fs);
         for (std::size_t i = 0; i < N; ++i)
         {
             const float target = std::clamp (std::round (msToSamples (ms[i], fs)), 1.0f, maxSamples);
@@ -288,7 +290,7 @@ public:
     // Energy loss of the loop is bounded by the decay gains, so the network is stable for
     // any setting where every gain is <= 1 (the mixing matrix is orthogonal).
     static constexpr float kMaxModMs = 3.0f;
-    static constexpr float kMaxLoopAllpassMs = 8.0f;
+    float maxLoopAllpass = 8.0f;
 
     // Replace the Hadamard mix with another orthogonal matrix (row-major, N * N), or
     // nullptr to go back. The caller keeps the array alive. Clear Night uses this for its
