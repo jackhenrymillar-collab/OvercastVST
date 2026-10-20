@@ -371,7 +371,7 @@ private:
     float loopAllpassGain = 0.0f;
     std::array<ThreeBandDecay, N> decay;
     std::array<Smoother, N> delays, gLow, gMid, gHigh;
-    std::array<Lfo, N> lfos;
+    std::array<DriftLfo, N> lfos;
     std::array<float, N> signs {};
     Smoother inputGain, modDepth, rotation, tailDepth;
     float modAmount = 0.0f, rotRate = 1.0f;
@@ -426,7 +426,7 @@ private:
     float maxScale = 1.0f;
     std::array<float, N> baseDelays {};
     std::array<Allpass, N> allpasses;
-    std::array<Lfo, N> lfos;
+    std::array<DriftLfo, N> lfos;
 };
 
 // Multi-tap early reflections read from one delay line. Tap times glide smoothly when

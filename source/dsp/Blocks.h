@@ -5,6 +5,7 @@
 // Nothing here allocates after prepare().
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -183,6 +184,71 @@ private:
     float fs = 48000.0f;
     float phase = 0.0f;
     float increment = 0.0f;
+};
+
+// Smooth random drift, used in place of a sine LFO for delay modulation. A sine repeats
+// exactly, and in a long tail that repetition can be heard as a metallic or chorus-like
+// wobble. This draws a new random point every half cycle and joins the points with a
+// Catmull-Rom curve, which keeps the slope continuous, so the delay (and the pitch it
+// bends) never jumps. The output stays within +-1, like a sine.
+// The points alternate up and down; the size and the timing of each swing vary.
+// setFrequency sets the average speed, like a sine of that frequency; setPhase seeds it.
+class DriftLfo
+{
+public:
+    void prepare (double sampleRate) { fs = static_cast<float> (sampleRate); }
+    void setFrequency (float hz) noexcept { increment = 2.0f * hz / fs; }
+
+    void setPhase (float p) noexcept
+    {
+        state = 0x9E3779B9u ^ static_cast<std::uint32_t> (p * 1000003.0f + 17.0f);
+        for (int k = 0; k < 8; ++k) random();
+        for (auto& v : points) v = random();
+        t = p - std::floor (p);
+    }
+
+    float next() noexcept
+    {
+        const float p0 = points[0], p1 = points[1], p2 = points[2], p3 = points[3];
+        const float out = 0.5f * (2.0f * p1 + (p2 - p0) * t
+                                  + (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t * t
+                                  + (3.0f * (p1 - p2) + p3 - p0) * t * t * t);
+        t += increment * pace;
+        if (t >= 1.0f)
+        {
+            t -= 1.0f;
+            points = { p1, p2, p3, random() };
+            // Each swing takes 0.7x to 1.3x the average time. Changing pace at a point bends
+            // the pitch by well under a cent, which is inaudible.
+            pace = 0.7f + 0.6f * unit();
+        }
+        return std::clamp (out, -1.0f, 1.0f);
+    }
+
+private:
+    float unit() noexcept
+    {
+        state = state * 1664525u + 1013904223u;
+        return static_cast<float> (state >> 8) * (1.0f / 16777216.0f);
+    }
+
+    float random() noexcept
+    {
+        // Alternate sides with a random size from 0.85 to 1, so the drift swings as far as
+        // the sine it replaces (a uniform spread would mostly hover near the middle, and the
+        // shallower wobble let long tails ring more).
+        state = state * 1664525u + 1013904223u;
+        side = -side;
+        return side * (0.85f + 0.15f * static_cast<float> (state >> 8) * (1.0f / 16777216.0f));
+    }
+
+    float fs = 48000.0f;
+    float increment = 0.0f;
+    float t = 0.0f;
+    std::uint32_t state = 1u;
+    float side = 1.0f;
+    float pace = 1.0f;
+    std::array<float, 4> points {};
 };
 
 // RBJ biquad, transposed direct form II. Used for the wet low/high cut.
